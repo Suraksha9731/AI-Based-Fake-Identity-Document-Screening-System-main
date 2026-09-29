@@ -881,6 +881,20 @@ body {
     margin-bottom: 0.85rem;
 }
 
+.signals-agreement-box {
+    margin: 0.5rem 0 0.85rem 0;
+    padding: 0.45rem 0.8rem;
+    background: rgba(0, 0, 0, 0.35);
+    border: 1px dashed rgba(245, 158, 11, 0.5);
+    border-radius: var(--radius-sm);
+    font-size: 0.82rem;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    color: #fef08a;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
 .doctype-warning-action {
     margin-top: 0.5rem;
 }
@@ -928,6 +942,18 @@ body {
     box-shadow: 0 4px 20px var(--color-fake-glow);
 }
 
+.verdict-card.verdict-suspicious {
+    background: rgba(245, 158, 11, 0.08);
+    border-color: rgba(245, 158, 11, 0.5);
+    box-shadow: 0 4px 20px rgba(245, 158, 11, 0.25);
+}
+
+.verdict-card.verdict-low-confidence {
+    background: rgba(217, 119, 6, 0.08);
+    border-color: rgba(217, 119, 6, 0.45);
+    box-shadow: 0 4px 20px rgba(217, 119, 6, 0.2);
+}
+
 .verdict-icon-wrap {
     width: 56px;
     height: 56px;
@@ -949,6 +975,18 @@ body {
     background: var(--color-fake);
     color: #ffffff;
     box-shadow: 0 0 15px var(--color-fake);
+}
+
+.verdict-suspicious .verdict-icon-wrap {
+    background: #f59e0b;
+    color: #ffffff;
+    box-shadow: 0 0 15px #f59e0b;
+}
+
+.verdict-low-confidence .verdict-icon-wrap {
+    background: #d97706;
+    color: #ffffff;
+    box-shadow: 0 0 15px #d97706;
 }
 
 .verdict-info {
@@ -974,6 +1012,15 @@ body {
 
 .verdict-fake .verdict-title {
     color: var(--color-fake);
+}
+
+.verdict-suspicious .verdict-title {
+    color: #fbbf24;
+}
+
+.verdict-low-confidence .verdict-title {
+    color: #f59e0b;
+    font-size: 1.35rem;
 }
 
 .verdict-desc {
@@ -1070,6 +1117,170 @@ body {
 /* ==========================================================================
    AI SECURITY CHATBOT PANEL (Activated ONLY for FAKE)
    ========================================================================== */
+/* Multi-Signal Breakdown Panels (Stage 1 & Stage 2) */
+.signals-panel, .authenticity-panel {
+    margin-bottom: 1.5rem;
+    padding: 1.1rem;
+    background: rgba(11, 15, 25, 0.45);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+}
+
+.signals-panel h4, .authenticity-panel h4 {
+    font-size: 0.88rem;
+    font-weight: 700;
+    color: var(--text-main);
+    margin-bottom: 0.85rem;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.signals-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: 0.75rem;
+}
+
+.signal-card {
+    background: rgba(30, 41, 59, 0.45);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-sm);
+    padding: 0.7rem 0.85rem;
+    transition: var(--transition-fast);
+}
+
+.signal-card.hit-agree {
+    border-color: rgba(16, 185, 129, 0.5);
+    background: rgba(16, 185, 129, 0.08);
+}
+
+.signal-card.hit-mismatch {
+    border-color: rgba(245, 158, 11, 0.5);
+    background: rgba(245, 158, 11, 0.08);
+}
+
+.signal-card.hit-neutral {
+    border-color: rgba(100, 116, 139, 0.4);
+}
+
+.signal-header {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    font-size: 0.72rem;
+    font-weight: 700;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    margin-bottom: 0.25rem;
+}
+
+.signal-value {
+    font-size: 0.96rem;
+    font-weight: 700;
+    color: var(--text-main);
+    margin-bottom: 0.15rem;
+}
+
+.signal-sub {
+    font-size: 0.72rem;
+    color: var(--text-dim);
+}
+
+.auth-section-title {
+    font-size: 0.78rem;
+    font-weight: 600;
+    color: var(--text-muted);
+    margin: 0.6rem 0;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+
+.quality-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+    gap: 0.5rem;
+    margin-top: 1rem;
+}
+
+.quality-chip {
+    padding: 0.5rem 0.65rem;
+    border-radius: var(--radius-sm);
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid var(--border-color);
+    font-size: 0.76rem;
+    font-weight: 600;
+    color: var(--text-muted);
+    display: flex;
+    align-items: center;
+    gap: 0.45rem;
+    transition: var(--transition-fast);
+}
+
+.quality-chip.chip-pass {
+    border-color: rgba(16, 185, 129, 0.4);
+    color: #6ee7b7;
+    background: rgba(16, 185, 129, 0.08);
+}
+
+.quality-chip.chip-fail {
+    border-color: rgba(239, 68, 68, 0.45);
+    color: #fca5a5;
+    background: rgba(239, 68, 68, 0.08);
+}
+
+.quality-chip.chip-warn {
+    border-color: rgba(245, 158, 11, 0.45);
+    color: #fde68a;
+    background: rgba(245, 158, 11, 0.08);
+}
+
+/* Why This Result Expandable Audit Details */
+.why-result-details {
+    margin-top: 1.25rem;
+    background: rgba(11, 15, 25, 0.5);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    overflow: hidden;
+}
+
+.why-result-details summary {
+    padding: 0.75rem 1rem;
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: #93c5fd;
+    cursor: pointer;
+    background: rgba(30, 41, 59, 0.35);
+    transition: var(--transition-fast);
+    list-style: none;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.why-result-details summary:hover {
+    background: rgba(30, 41, 59, 0.6);
+    color: #bfdbfe;
+}
+
+.why-result-content {
+    padding: 1rem 1.15rem;
+    font-size: 0.85rem;
+    line-height: 1.65;
+    color: var(--text-muted);
+    border-top: 1px solid var(--border-color);
+    background: rgba(0, 0, 0, 0.2);
+}
+
+.why-result-content ul {
+    margin-left: 1.2rem;
+    margin-top: 0.4rem;
+}
+
+.why-result-content li {
+    margin-bottom: 0.35rem;
+}
+
 .chatbot-panel {
     margin-top: 1.5rem;
     background: rgba(11, 15, 25, 0.6);

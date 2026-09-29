@@ -16,6 +16,8 @@
     <!-- TensorFlow.js and Teachable Machine Libraries -->
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@latest/dist/tf.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@teachablemachine/image@latest/dist/teachablemachine-image.min.js"></script>
+    <!-- Tesseract.js Client-Side OCR -->
+    <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
 </head>
 <body>
     <div class="app-container">
@@ -185,6 +187,9 @@
                             <div class="doctype-warning-badge" id="doctype-warning-badge">STAGE 1 &bull; DOCUMENT VALIDATION</div>
                             <h3 class="doctype-warning-title" id="doctype-warning-title">Wrong Document Type</h3>
                             <p class="doctype-warning-desc" id="doctype-warning-desc"></p>
+                            <div class="signals-agreement-box" id="signals-agreement-box" style="display: none;">
+                                <i class="fa-solid fa-code-branch"></i> <span id="signals-agreement-text"></span>
+                            </div>
                             <div class="doctype-warning-action" id="doctype-warning-action">
                                 <button class="btn btn-switch" id="doctype-switch-btn" type="button">
                                     <i class="fa-solid fa-repeat"></i> <span id="doctype-switch-btn-label">Switch Document Type</span>
@@ -213,35 +218,92 @@
                         </div>
                     </div>
 
-                    <!-- Progress Bars Breakdown -->
+                    <!-- Multi-Signal Breakdown Panel -->
                     <div class="breakdown-section" id="breakdown-section">
-                        <h3>Class Probability Breakdown</h3>
-                        
-                        <!-- Original Class Row -->
-                        <div class="class-row" id="row-ORIGINAL">
-                            <div class="class-meta">
-                                <span class="class-name">
-                                    <i class="fa-solid fa-shield-check class-badge-icon original-icon"></i> ORIGINAL
-                                </span>
-                                <span class="class-percentage" id="score-ORIGINAL">0%</span>
-                            </div>
-                            <div class="progress-track">
-                                <div class="progress-bar bar-original" id="bar-ORIGINAL" style="width: 0%;"></div>
+                        <!-- Stage 1 Signals Summary -->
+                        <div class="signals-panel" id="stage1-signals-panel">
+                            <h4><i class="fa-solid fa-layer-group"></i> Stage 1: Document Type Detection Signals</h4>
+                            <div class="signals-grid">
+                                <div class="signal-card" id="signal-ocr-card">
+                                    <div class="signal-header">
+                                        <i class="fa-solid fa-font"></i> <span>1A. OCR Keywords</span>
+                                    </div>
+                                    <div class="signal-value" id="signal-ocr-val">Analyzing...</div>
+                                    <div class="signal-sub" id="signal-ocr-sub">Tesseract.js Engine</div>
+                                </div>
+                                <div class="signal-card" id="signal-model-card">
+                                    <div class="signal-header">
+                                        <i class="fa-solid fa-microchip"></i> <span>1B. Doctype Model</span>
+                                    </div>
+                                    <div class="signal-value" id="signal-model-val">Checking...</div>
+                                    <div class="signal-sub" id="signal-model-sub">./model-doctype/</div>
+                                </div>
+                                <div class="signal-card" id="signal-vision-card">
+                                    <div class="signal-header">
+                                        <i class="fa-solid fa-eye"></i> <span>1C. AI Vision</span>
+                                    </div>
+                                    <div class="signal-value" id="signal-vision-val">Standing by</div>
+                                    <div class="signal-sub" id="signal-vision-sub">Gemini Vision LLM</div>
+                                </div>
                             </div>
                         </div>
 
-                        <!-- Fake Class Row -->
-                        <div class="class-row" id="row-FAKE">
-                            <div class="class-meta">
-                                <span class="class-name">
-                                    <i class="fa-solid fa-triangle-exclamation class-badge-icon fake-icon"></i> FAKE
-                                </span>
-                                <span class="class-percentage" id="score-FAKE">0%</span>
+                        <!-- Stage 2 Authenticity Breakdown -->
+                        <div class="authenticity-panel" id="stage2-signals-panel">
+                            <h4><i class="fa-solid fa-shield-halved"></i> Stage 2: Authenticity & Quality Signals</h4>
+                            
+                            <!-- Model Probability -->
+                            <div class="auth-section-title">Model Classification Probability</div>
+                            <div class="class-row" id="row-ORIGINAL">
+                                <div class="class-meta">
+                                    <span class="class-name">
+                                        <i class="fa-solid fa-shield-check class-badge-icon original-icon"></i> ORIGINAL
+                                    </span>
+                                    <span class="class-percentage" id="score-ORIGINAL">0%</span>
+                                </div>
+                                <div class="progress-track">
+                                    <div class="progress-bar bar-original" id="bar-ORIGINAL" style="width: 0%;"></div>
+                                </div>
                             </div>
-                            <div class="progress-track">
-                                <div class="progress-bar bar-fake" id="bar-FAKE" style="width: 0%;"></div>
+
+                            <div class="class-row" id="row-FAKE">
+                                <div class="class-meta">
+                                    <span class="class-name">
+                                        <i class="fa-solid fa-triangle-exclamation class-badge-icon fake-icon"></i> FAKE
+                                    </span>
+                                    <span class="class-percentage" id="score-FAKE">0%</span>
+                                </div>
+                                <div class="progress-track">
+                                    <div class="progress-bar bar-fake" id="bar-FAKE" style="width: 0%;"></div>
+                                </div>
+                            </div>
+
+                            <!-- Quality & Tampering Checks -->
+                            <div class="quality-grid" id="quality-grid">
+                                <div class="quality-chip" id="chip-blur">
+                                    <i class="fa-solid fa-camera"></i> <span id="chip-blur-text">Blur: Normal</span>
+                                </div>
+                                <div class="quality-chip" id="chip-res">
+                                    <i class="fa-solid fa-expand"></i> <span id="chip-res-text">Resolution: OK</span>
+                                </div>
+                                <div class="quality-chip" id="chip-light">
+                                    <i class="fa-solid fa-sun"></i> <span id="chip-light-text">Exposure: OK</span>
+                                </div>
+                                <div class="quality-chip" id="chip-moire">
+                                    <i class="fa-solid fa-display"></i> <span id="chip-moire-text">Screen Artifacts: None</span>
+                                </div>
                             </div>
                         </div>
+
+                        <!-- Why this result? Expandable Audit Section -->
+                        <details class="why-result-details" id="why-result-details">
+                            <summary>
+                                <i class="fa-solid fa-circle-question"></i> Why this result? (Click for decision audit)
+                            </summary>
+                            <div class="why-result-content" id="why-result-content">
+                                Detailed verification signals will appear here after analysis.
+                            </div>
+                        </details>
 
                         <!-- Dynamic fallback for any additional model classes if present -->
                         <div id="dynamic-classes-container"></div>
