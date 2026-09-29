@@ -1,23 +1,32 @@
 /**
- * Multi-Document Verification Script with 3-Signal Stage 1 & Multi-Factor Stage 2
- * Architecture:
- * - STAGE 1A: Tesseract.js Client-Side OCR with Fuzzy Matching (Levenshtein <= 2) & Regex Patterns
- * - STAGE 1B: Dedicated Document Type Classifier (./model-doctype/)
- * - STAGE 1C: Gemini Vision Verification Fallback (/api/verify-doc-type)
- * - STAGE 2:  Selected Document Authenticity Model + Image Quality Checks + AI Tampering Assessment
+ * Multi-Document Verification Script (Two-Stage Pipeline)
+ * 
+ * STAGE 1: Document Type Detection (Strict Priority Order)
+ * - Rule 1: Definitive OCR Strong Identifier (eng+hin+kan, upscaled 2x, exact/fuzzy <= 1)
+ * - Rule 2: Multiple Strong OCR Identifiers (Highest Score, Low Certainty)
+ * - Rule 3: Dedicated Doctype Classifier (./model-doctype, letterboxed, rotations 0/90/180/270)
+ * - Rule 4: Gemini Vision LLM Visual Inspection (/api/verify-doc-type)
+ * - Rule 5: Unrecognized Document Fallback
+ * 
+ * STAGE 2: Authenticity Verification (Selected Model + Image Quality + AI Tampering)
  */
 
 // ==========================================================================
-// Thresholds & Configuration Constants
+// 1. Thresholds & Configuration Constants
 // ==========================================================================
-const MIN_TYPE_CONFIDENCE = 0.75;              // Minimum combined confidence for document type decision
-const AI_FALLBACK_CONFIDENCE_THRESHOLD = 0.80; // Call 1C AI vision if best confidence < 0.80 or 1A/1B disagree
-const BLUR_LAPLACIAN_THRESHOLD = 70.0;         // Below this variance -> blurry image
-const LOW_RES_WIDTH_THRESHOLD = 400;          // Minimum natural width in px
-const LOW_RES_HEIGHT_THRESHOLD = 300;         // Minimum natural height in px
+const MIN_TYPE_CONFIDENCE = 0.75;              // Minimum confidence threshold to accept type
+const MODEL_DOCTYPE_HIGH_CONF = 0.85;          // Model top-class threshold for Rule 3
+const MODEL_DOCTYPE_LOW_RIVAL = 0.30;          // Model rival-class upper limit for Rule 3
+const BLUR_LAPLACIAN_THRESHOLD = 70.0;         // Laplacian variance threshold for blur
+const LOW_RES_WIDTH_THRESHOLD = 400;          // Min width in px
+const LOW_RES_HEIGHT_THRESHOLD = 300;         // Min height in px
 const BRIGHTNESS_MIN = 35;                    // Extreme darkness threshold
-const BRIGHTNESS_MAX = 225;                   // Extreme washed-out brightness threshold
+const BRIGHTNESS_MAX = 225;                   // Extreme brightness threshold
 const BACKEND_VISION_URL = "http://localhost:5001/api/verify-doc-type";
+
+// Debug mode toggle (?debug=1 in query string)
+const urlParams = new URLSearchParams(window.location.search);
+let isDebugMode = urlParams.get("debug") === "1";
 
 // SESSION GUARD: Protect route if user is not authenticated
 (function checkSession() {
@@ -58,38 +67,45 @@ const DOC_TYPES = {
     }
 };
 
-// OCR Keyword and Pattern Map for Stage 1A
-const OCR_CONFIG = {
+// ==========================================================================
+// OCR Rule Definitions (Strong Identifiers vs Weak Support)
+// ==========================================================================
+const OCR_RULES = {
     aadhaar: {
         id: "aadhaar",
         label: "Aadhaar Card",
-        keywords: ["aadhaar", "uidai", "unique identification", "आधार", "your aadhaar no", "vid"],
-        pattern: /\b\d{4}\s?\d{4}\s?\d{4}\b/
+        strongKeywords: ["uidai", "unique identification authority", "aadhaar", "आधार", "ಆಧಾರ್"],
+        strongPatterns: [/\b[2-9]\d{3}\s?\d{4}\s?\d{4}\b/],
+        weakKeywords: ["government of india", "भारत सरकार", "date of birth", "dob", "male", "female", "year of birth"]
     },
     pancard: {
         id: "pancard",
         label: "PAN Card",
-        keywords: ["income tax department", "permanent account number", "आयकर विभाग", "govt. of india", "pan card"],
-        pattern: /\b[A-Z]{5}[0-9]{4}[A-Z]\b/i
+        strongKeywords: ["income tax department", "permanent account number"],
+        strongPatterns: [/\b[A-Z]{5}\d{4}[A-Z]\b/],
+        weakKeywords: ["govt. of india", "father's name", "date of birth", "dob", "signature"]
     },
     passport: {
         id: "passport",
         label: "Passport",
-        keywords: ["republic of india", "passport", "पासपोर्ट", "type", "nationality", "p<ind"],
-        pattern: /\bP<[A-Z0-9<]+/i
+        strongKeywords: ["passport no"],
+        strongCompound: [["date of expiry", "nationality"]],
+        strongPatterns: [/\bP<IND/i, /\bP<[A-Z0-9<]{10,}/i],
+        weakKeywords: ["republic of india", "given name", "surname", "place of birth", "place of issue"]
     },
     voterid: {
         id: "voterid",
         label: "Voter ID Card",
-        keywords: ["election commission of india", "भारत निर्वाचन आयोग", "elector", "epic", "voter"],
-        pattern: /\b[A-Z]{3}[0-9]{7}\b/i
+        strongKeywords: ["election commission of india", "भारत निर्वाचन आयोग", "elector photo identity"],
+        strongPatterns: [/\b[A-Z]{3}\d{7}\b/],
+        weakKeywords: ["elector's name", "elector", "epic", "father's name", "gender", "age"]
     }
 };
 
 // Application State
 let currentDocType = "aadhaar";
-const loadedModels = {}; // Cache map for per-type authenticity models { aadhaar, pancard, passport, voterid }
-let doctypeClassifierModel = null; // Stage 1B Dedicated classifier model (./model-doctype)
+const loadedModels = {}; // Cache map for STAGE 2 authenticity models { aadhaar, pancard, passport, voterid }
+let doctypeClassifierModel = null; // STAGE 1B Dedicated classifier model (./model-doctype)
 let webcamStream = null;
 let isLivePredicting = false;
 let livePredictAnimationFrame = null;
@@ -167,10 +183,14 @@ const chipMoireText = document.getElementById("chip-moire-text");
 const whyResultDetails = document.getElementById("why-result-details");
 const whyResultContent = document.getElementById("why-result-content");
 
+// Debug Panel Elements
+const stage1DebugPanel = document.getElementById("stage1-debug-panel");
+const debugPanelBody = document.getElementById("debug-panel-body");
+
 const userDisplayName = document.getElementById("user-display-name");
 
 // ==========================================================================
-// Initialization & Preload
+// 2. Initialization & Preloading
 // ==========================================================================
 document.addEventListener("DOMContentLoaded", () => {
     const currentUser = sessionStorage.getItem("currentUser") || "User";
@@ -182,7 +202,21 @@ document.addEventListener("DOMContentLoaded", () => {
     preloadAllModels();
     setupDropZone();
     setupFileInput();
+    initDebugPanel();
 });
+
+function initDebugPanel() {
+    if (stage1DebugPanel) {
+        stage1DebugPanel.style.display = isDebugMode ? "block" : "none";
+    }
+}
+
+function toggleDebugPanel() {
+    isDebugMode = !isDebugMode;
+    if (stage1DebugPanel) {
+        stage1DebugPanel.style.display = isDebugMode ? "block" : "none";
+    }
+}
 
 function renderDocTypeTabs() {
     const container = document.getElementById("doc-tabs-container");
@@ -226,7 +260,7 @@ async function preloadAllModels() {
             throw new Error("Teachable Machine library not loaded. Check CDN script tags.");
         }
 
-        // 1. Try loading Stage 1B Dedicated Document Type Classifier (./model-doctype/)
+        // Try preloading Stage 1B Dedicated Document Type Classifier (./model-doctype/)
         try {
             doctypeClassifierModel = await tmImage.load("./model-doctype/model.json", "./model-doctype/metadata.json");
             console.log("[STAGE 1B] Dedicated document type classifier loaded successfully.");
@@ -235,7 +269,7 @@ async function preloadAllModels() {
             console.log("[STAGE 1B] ./model-doctype not found or not yet trained. Will use OCR (1A) + AI Vision (1C).");
         }
 
-        // 2. Preload Stage 2 Authenticity Models for all document types
+        // Preload Stage 2 Authenticity Models (for Stage 2 execution only)
         await Promise.all(Object.keys(DOC_TYPES).map(id => loadModelForDocType(id)));
 
         const modelCount = Object.keys(loadedModels).length + (doctypeClassifierModel ? 1 : 0);
@@ -254,9 +288,6 @@ function updateModelStatus(state, text) {
     }
 }
 
-// ==========================================================================
-// Document Selection & Auto Re-validation
-// ==========================================================================
 function selectDocumentType(docTypeId) {
     if (!DOC_TYPES[docTypeId]) return;
     currentDocType = docTypeId;
@@ -289,7 +320,7 @@ function switchTab(tabName) {
 }
 
 // ==========================================================================
-// File Upload & Webcam Handling
+// 3. File Upload & Webcam Handling
 // ==========================================================================
 function setupDropZone() {
     ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(name => {
@@ -423,55 +454,126 @@ async function runLivePredictionLoop() {
 }
 
 // ==========================================================================
-// Image Processing & Quality Utilities
+// 4. STEP 3: Fixed Image Preprocessing (Letterbox & Rotations)
 // ==========================================================================
-function getPreprocessedCanvas(imageElement, rotationDeg = 0, enhance = false) {
+/**
+ * Scales to fit inside targetSize x targetSize and pads with neutral gray (#808080).
+ * Never stretches or center-crops, preserving full aspect ratio.
+ */
+function createLetterboxedCanvas(imageElement, targetSize = 224, rotationDeg = 0, padColor = "#808080") {
     const canvas = document.createElement("canvas");
+    canvas.width = targetSize;
+    canvas.height = targetSize;
     const ctx = canvas.getContext("2d");
-    const maxDim = 900;
-    let w = imageElement.naturalWidth || imageElement.videoWidth || imageElement.width || 640;
-    let h = imageElement.naturalHeight || imageElement.videoHeight || imageElement.height || 480;
 
-    if (w > maxDim || h > maxDim) {
-        if (w > h) {
-            h = Math.round((h * maxDim) / w);
-            w = maxDim;
-        } else {
-            w = Math.round((w * maxDim) / h);
-            h = maxDim;
-        }
-    }
+    // Fill with neutral gray padding
+    ctx.fillStyle = padColor;
+    ctx.fillRect(0, 0, targetSize, targetSize);
 
-    if (rotationDeg === 90 || rotationDeg === 270) {
-        canvas.width = h;
-        canvas.height = w;
-    } else {
-        canvas.width = w;
-        canvas.height = h;
-    }
+    // Source dimensions
+    let srcW = imageElement.naturalWidth || imageElement.videoWidth || imageElement.width || targetSize;
+    let srcH = imageElement.naturalHeight || imageElement.videoHeight || imageElement.height || targetSize;
+
+    // Dimensions when rotated
+    const effW = (rotationDeg === 90 || rotationDeg === 270) ? srcH : srcW;
+    const effH = (rotationDeg === 90 || rotationDeg === 270) ? srcW : srcH;
+
+    // Scale to fit targetSize
+    const scale = Math.min(targetSize / effW, targetSize / effH);
+    const drawW = srcW * scale;
+    const drawH = srcH * scale;
 
     ctx.save();
-    ctx.translate(canvas.width / 2, canvas.height / 2);
+    ctx.translate(targetSize / 2, targetSize / 2);
     ctx.rotate((rotationDeg * Math.PI) / 180);
-    ctx.drawImage(imageElement, -w / 2, -h / 2, w, h);
+    ctx.drawImage(imageElement, -drawW / 2, -drawH / 2, drawW, drawH);
     ctx.restore();
-
-    if (enhance) {
-        const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-        const d = imgData.data;
-        for (let i = 0; i < d.length; i += 4) {
-            const gray = 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
-            const contrast = gray > 128 ? Math.min(255, (gray - 128) * 1.4 + 128) : Math.max(0, 128 - (128 - gray) * 1.4);
-            d[i] = contrast;
-            d[i + 1] = contrast;
-            d[i + 2] = contrast;
-        }
-        ctx.putImageData(imgData, 0, 0);
-    }
 
     return canvas;
 }
 
+/**
+ * Runs a model on letterboxed image variants (0°, 90°, 180°, 270°) and averages probabilities
+ */
+async function predictWithRotations(model, imageElement) {
+    const rotations = [0, 90, 180, 270];
+    let bestPreds = null;
+    let maxTopProb = -1;
+    let bestRotation = 0;
+    const accumulated = {};
+
+    for (const rot of rotations) {
+        const letterboxCanvas = createLetterboxedCanvas(imageElement, 224, rot, "#808080");
+        const preds = await model.predict(letterboxCanvas);
+        
+        const topProb = Math.max(...preds.map(p => p.probability));
+        if (topProb > maxTopProb) {
+            maxTopProb = topProb;
+            bestPreds = preds;
+            bestRotation = rot;
+        }
+
+        preds.forEach(p => {
+            const key = p.className.trim().toLowerCase();
+            accumulated[key] = (accumulated[key] || 0) + p.probability;
+        });
+    }
+
+    const averagedPreds = Object.keys(accumulated).map(className => ({
+        className,
+        probability: accumulated[className] / rotations.length
+    }));
+
+    return {
+        bestPreds,
+        averagedPreds,
+        bestRotation,
+        maxTopProb
+    };
+}
+
+/**
+ * Prepares image for OCR: upscales small images 2x, applies grayscale & contrast enhancement
+ */
+function prepareOcrCanvas(imageElement) {
+    const origW = imageElement.naturalWidth || imageElement.videoWidth || imageElement.width || 640;
+    const origH = imageElement.naturalHeight || imageElement.videoHeight || imageElement.height || 480;
+
+    let scale = 1.0;
+    if (origW < 800 || origH < 800) {
+        scale = 2.0; // Upscale small images 2x for OCR
+    } else if (origW > 1600 || origH > 1600) {
+        scale = 1600 / Math.max(origW, origH);
+    }
+
+    const w = Math.round(origW * scale);
+    const h = Math.round(origH * scale);
+
+    const canvas = document.createElement("canvas");
+    canvas.width = w;
+    canvas.height = h;
+    const ctx = canvas.getContext("2d");
+
+    ctx.drawImage(imageElement, 0, 0, w, h);
+
+    // Grayscale + Contrast Stretch
+    const imgData = ctx.getImageData(0, 0, w, h);
+    const d = imgData.data;
+    for (let i = 0; i < d.length; i += 4) {
+        const gray = 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
+        const contrast = gray > 128 ? Math.min(255, (gray - 128) * 1.45 + 128) : Math.max(0, 128 - (128 - gray) * 1.45);
+        d[i] = contrast;
+        d[i + 1] = contrast;
+        d[i + 2] = contrast;
+    }
+    ctx.putImageData(imgData, 0, 0);
+
+    return canvas;
+}
+
+/**
+ * Analyzes basic image quality (sharpness/blur, exposure, resolution, moire)
+ */
 function analyzeImageQuality(imageElement) {
     const canvas = document.createElement("canvas");
     const ctx = canvas.getContext("2d");
@@ -527,7 +629,7 @@ function analyzeImageQuality(imageElement) {
     for (let i = 0; i < data.length - 8; i += 8) {
         const diffR = Math.abs(data[i] - data[i + 4]);
         const diffB = Math.abs(data[i + 2] - data[i + 6]);
-        if (diffR > 40 && diffB > 40) highFreqCount++;
+        if (diffR > 42 && diffB > 42) highFreqCount++;
     }
     const moireRatio = highFreqCount / (w * h / 2);
     const hasScreenArtifacts = moireRatio > 0.16;
@@ -545,7 +647,7 @@ function analyzeImageQuality(imageElement) {
     };
 }
 
-// Levenshtein distance helper (case-insensitive fuzzy match <= 2)
+// Levenshtein distance helper
 function levenshteinDistance(s1, s2) {
     if (!s1 || !s2) return (s1 || s2).length;
     s1 = s1.toLowerCase();
@@ -572,136 +674,167 @@ function levenshteinDistance(s1, s2) {
     return matrix[len1][len2];
 }
 
-// ==========================================================================
-// STAGE 1A: Tesseract.js Client-Side OCR Keyword & Pattern Matcher
-// ==========================================================================
-function evaluateOcrText(rawText) {
-    if (!rawText || typeof rawText !== "string") {
-        return { topType: null, score: 0, confidence: 0, patternHit: false, keywordHits: [], allScores: {} };
+/**
+ * Keyword match rule:
+ * - Only fuzzy-match strings longer than 8 characters, with max distance 1.
+ * - Use exact match for strings <= 8 characters.
+ */
+function keywordMatchesText(cleanText, keyword) {
+    const kw = keyword.toLowerCase();
+    if (cleanText.includes(kw)) {
+        return { matched: true, method: "exact" };
     }
-    const cleanLower = rawText.toLowerCase();
-    const tokens = cleanLower.split(/[\s,.:;/\-_()|'"]+/).filter(t => t.length > 2);
-    const results = {};
 
-    for (const [docId, config] of Object.entries(OCR_CONFIG)) {
-        let patternHit = false;
-        if (config.pattern && config.pattern.test(rawText)) {
-            patternHit = true;
-        }
-
-        const matchedKeywords = [];
-        for (const kw of config.keywords) {
-            const kwLower = kw.toLowerCase();
-            if (kwLower.includes(" ")) {
-                if (cleanLower.includes(kwLower)) {
-                    matchedKeywords.push(kw);
-                } else {
-                    // Check sub-phrases or fuzzy match
-                    const kwParts = kwLower.split(" ");
-                    if (kwParts.every(part => tokens.some(t => levenshteinDistance(t, part) <= 1))) {
-                        matchedKeywords.push(kw + " ~fuzzy");
-                    }
+    if (kw.length > 8) {
+        if (kw.includes(" ")) {
+            const lines = cleanText.split(/[\r\n]+/);
+            for (const line of lines) {
+                if (Math.abs(line.length - kw.length) <= 2 && levenshteinDistance(line.trim(), kw) <= 1) {
+                    return { matched: true, method: "fuzzy" };
                 }
-            } else {
-                if (tokens.includes(kwLower) || tokens.some(t => levenshteinDistance(t, kwLower) <= 2)) {
-                    matchedKeywords.push(kw);
+            }
+        } else {
+            const tokens = cleanText.split(/[\s,.:;/\-_()|'"]+/);
+            for (const token of tokens) {
+                if (Math.abs(token.length - kw.length) <= 1 && levenshteinDistance(token, kw) <= 1) {
+                    return { matched: true, method: "fuzzy" };
+                }
+            }
+        }
+    }
+
+    return { matched: false };
+}
+
+// ==========================================================================
+// 5. STEP 4: Robust Multilingual OCR Evaluation
+// ==========================================================================
+function evaluateOcrTextStrict(rawText) {
+    if (!rawText || typeof rawText !== "string") {
+        return { strongTypes: [], scores: {}, rawText: "" };
+    }
+
+    const cleanLower = rawText.toLowerCase();
+    const scores = {};
+    const strongTypes = [];
+
+    for (const [docId, config] of Object.entries(OCR_RULES)) {
+        const strongHits = [];
+        const patternHits = [];
+        const weakHits = [];
+
+        // 1. Check strong patterns
+        if (config.strongPatterns) {
+            for (const pat of config.strongPatterns) {
+                if (pat.test(rawText)) {
+                    patternHits.push(pat.toString());
                 }
             }
         }
 
-        // Score: patterns weigh 2x, each keyword weighs 1x
-        const score = (patternHit ? 2 : 0) + matchedKeywords.length;
-        let confidence = 0;
-        if (patternHit && matchedKeywords.length > 0) confidence = 0.96;
-        else if (patternHit) confidence = 0.90;
-        else if (matchedKeywords.length >= 2) confidence = 0.85;
-        else if (matchedKeywords.length === 1) confidence = 0.65;
+        // 2. Check strong keywords
+        if (config.strongKeywords) {
+            for (const kw of config.strongKeywords) {
+                const res = keywordMatchesText(cleanLower, kw);
+                if (res.matched) {
+                    strongHits.push(`${kw} (${res.method})`);
+                }
+            }
+        }
 
-        results[docId] = {
+        // 3. Check compound conditions (e.g. passport: "date of expiry" + "nationality")
+        if (config.strongCompound) {
+            for (const pair of config.strongCompound) {
+                if (pair.every(term => cleanLower.includes(term.toLowerCase()))) {
+                    strongHits.push(`Compound: ${pair.join(" + ")}`);
+                }
+            }
+        }
+
+        // 4. Check weak keywords (support only)
+        if (config.weakKeywords) {
+            for (const kw of config.weakKeywords) {
+                if (cleanLower.includes(kw.toLowerCase())) {
+                    weakHits.push(kw);
+                }
+            }
+        }
+
+        const isStrong = (strongHits.length > 0 || patternHits.length > 0);
+        // Score calculation: pattern = 3 pts, strong kw = 2 pts, weak kw = 0.5 pts
+        const score = (patternHits.length * 3) + (strongHits.length * 2) + (weakHits.length * 0.5);
+
+        if (isStrong) {
+            strongTypes.push(docId);
+        }
+
+        scores[docId] = {
             id: docId,
             label: config.label,
+            isStrong,
             score,
-            confidence,
-            patternHit,
-            matchedKeywords
+            strongHits,
+            patternHits,
+            weakHits
         };
     }
 
-    const sorted = Object.values(results).sort((a, b) => b.score - a.score);
-    const top = sorted[0];
-
     return {
-        topType: top && top.score > 0 ? top.id : null,
-        topLabel: top && top.score > 0 ? top.label : null,
-        score: top ? top.score : 0,
-        confidence: top ? top.confidence : 0,
-        patternHit: top ? top.patternHit : false,
-        keywordHits: top ? top.matchedKeywords : [],
-        allScores: results,
+        strongTypes,
+        scores,
         rawText
     };
 }
 
 async function runStage1AOcr(imageElement) {
     if (typeof Tesseract === "undefined") {
-        console.warn("[STAGE 1A] Tesseract.js is not loaded from CDN.");
-        return { available: false, topType: null, score: 0, confidence: 0, reason: "OCR library unavailable" };
+        console.warn("[STAGE 1A] Tesseract.js is not loaded.");
+        return { available: false, strongTypes: [], scores: {}, reason: "OCR library not loaded" };
     }
 
     try {
-        // Try original canvas first
-        const canvas0 = getPreprocessedCanvas(imageElement, 0, false);
-        const res0 = await Tesseract.recognize(canvas0, 'eng');
-        let evaluation = evaluateOcrText(res0.data.text);
+        const ocrCanvas = prepareOcrCanvas(imageElement);
 
-        if (evaluation.score >= 2 || evaluation.patternHit) {
-            return { available: true, ...evaluation };
-        }
-
-        // Try enhanced contrast
-        const canvasEnh = getPreprocessedCanvas(imageElement, 0, true);
-        const resEnh = await Tesseract.recognize(canvasEnh, 'eng');
-        const evalEnh = evaluateOcrText(resEnh.data.text);
-        if (evalEnh.score > evaluation.score) evaluation = evalEnh;
-
-        if (evaluation.score >= 2 || evaluation.patternHit) {
-            return { available: true, ...evaluation };
-        }
-
-        // If no keywords found, try rotations: 90, 180, 270
-        const rotations = [90, 180, 270];
-        for (const rot of rotations) {
-            const rotCanvas = getPreprocessedCanvas(imageElement, rot, false);
-            const rotRes = await Tesseract.recognize(rotCanvas, 'eng');
-            const rotEval = evaluateOcrText(rotRes.data.text);
-            if (rotEval.score > evaluation.score) {
-                evaluation = rotEval;
+        // Load multilingual models: eng+hin+kan, with fallback to eng+hin then eng
+        let ocrResult = null;
+        try {
+            ocrResult = await Tesseract.recognize(ocrCanvas, 'eng+hin+kan');
+        } catch (langErr) {
+            console.warn("Falling back to eng+hin OCR:", langErr.message);
+            try {
+                ocrResult = await Tesseract.recognize(ocrCanvas, 'eng+hin');
+            } catch (_) {
+                ocrResult = await Tesseract.recognize(ocrCanvas, 'eng');
             }
-            if (evaluation.score >= 2 || evaluation.patternHit) break;
         }
 
-        return { available: true, ...evaluation };
-
-    } catch (ocrErr) {
-        console.warn("[STAGE 1A] OCR error:", ocrErr);
-        return { available: false, topType: null, score: 0, confidence: 0, reason: ocrErr.message };
+        const evalData = evaluateOcrTextStrict(ocrResult?.data?.text || "");
+        return {
+            available: true,
+            ...evalData
+        };
+    } catch (err) {
+        console.warn("[STAGE 1A] OCR error:", err);
+        return { available: false, strongTypes: [], scores: {}, reason: err.message };
     }
 }
 
 // ==========================================================================
-// STAGE 1B: Dedicated Document Type Classifier Model (./model-doctype/)
+// 6. STAGE 1B: Dedicated Document Type Classifier (./model-doctype)
 // ==========================================================================
 async function runStage1BClassifier(imageElement) {
     if (!doctypeClassifierModel) {
-        return { available: false, topType: null, confidence: 0, reason: "./model-doctype model not present" };
+        return { available: false, topType: null, confidence: 0, reason: "Model not loaded" };
     }
 
     try {
-        const predictions = await doctypeClassifierModel.predict(imageElement);
-        const sorted = [...predictions].sort((a, b) => b.probability - a.probability);
+        // Run with letterboxed 224x224 across 4 rotations
+        const { averagedPreds, bestPreds } = await predictWithRotations(doctypeClassifierModel, imageElement);
+        const sorted = [...averagedPreds].sort((a, b) => b.probability - a.probability);
         const top = sorted[0];
-        const rawClass = top ? top.className.trim().toLowerCase() : "other";
+        const second = sorted[1];
 
+        const rawClass = top ? top.className.trim().toLowerCase() : "other";
         let mappedId = "other";
         if (rawClass.includes("aadhaar")) mappedId = "aadhaar";
         else if (rawClass.includes("pan")) mappedId = "pancard";
@@ -712,17 +845,18 @@ async function runStage1BClassifier(imageElement) {
             available: true,
             topType: mappedId,
             topLabel: DOC_TYPES[mappedId]?.label || "Other",
-            confidence: top ? top.probability : 0,
-            predictions
+            topProb: top ? top.probability : 0,
+            secondProb: second ? second.probability : 0,
+            predictions: averagedPreds
         };
     } catch (err) {
-        console.warn("[STAGE 1B] Model classification error:", err);
+        console.warn("[STAGE 1B] Classifier prediction error:", err);
         return { available: false, topType: null, confidence: 0, reason: err.message };
     }
 }
 
 // ==========================================================================
-// STAGE 1C: Gemini Vision LLM Verification Fallback (/api/verify-doc-type)
+// 7. STAGE 1C: Gemini Vision LLM Verification (/api/verify-doc-type)
 // ==========================================================================
 async function runStage1CVision(imageElement) {
     try {
@@ -758,7 +892,7 @@ async function runStage1CVision(imageElement) {
                 available: true,
                 topType: mappedType,
                 topLabel: DOC_TYPES[mappedType]?.label || "Other",
-                confidence: typeof data.result.confidence === "number" ? data.result.confidence : 0.85,
+                confidence: typeof data.result.confidence === "number" ? Math.min(0.99, data.result.confidence) : 0.88,
                 reason: data.result.reason || "Vision AI verification completed",
                 fake_signals: Array.isArray(data.result.fake_signals) ? data.result.fake_signals : []
             };
@@ -772,7 +906,6 @@ async function runStage1CVision(imageElement) {
             };
         }
     } catch (err) {
-        console.warn("[STAGE 1C] Vision API fetch error:", err.message);
         return {
             available: false,
             topType: null,
@@ -784,114 +917,127 @@ async function runStage1CVision(imageElement) {
 }
 
 // ==========================================================================
-// DECISION LOGIC: Multi-Signal Combination (1A + 1B + 1C)
+// 8. STEP 5: New Decision Logic (Strict Priority Order)
 // ==========================================================================
 async function executeStage1Validation(imageElement) {
     updateSignalsUIInProgress();
 
-    // 1. Run Stage 1A (OCR) and Stage 1B (Dedicated Classifier) concurrently
-    const [signal1A, signal1B] = await Promise.all([
-        runStage1AOcr(imageElement),
-        runStage1BClassifier(imageElement)
-    ]);
+    // 1. Run Stage 1A (OCR)
+    const ocrResult = await runStage1AOcr(imageElement);
+    renderSignal1AUI(ocrResult);
 
-    renderSignal1AUI(signal1A);
-    renderSignal1BUI(signal1B);
+    let decidedType = null;
+    let decidedConfidence = 0;
+    let decidingRule = "";
+    let isLowCertainty = false;
+    let candidate1 = null;
+    let candidate2 = null;
 
-    // 2. Decide whether Stage 1C (AI Vision) is needed
-    // Condition: Call 1C if OCR and Model disagree, OR best confidence < 0.80, OR model is missing
-    const ocrType = signal1A.topType;
-    const modelType = signal1B.topType;
-    const bestPreConf = Math.max(signal1A.confidence || 0, signal1B.confidence || 0);
-
-    const needsAiVision = (
-        !signal1B.available ||
-        !signal1A.topType ||
-        (ocrType && modelType && ocrType !== modelType) ||
-        bestPreConf < AI_FALLBACK_CONFIDENCE_THRESHOLD
-    );
-
-    let signal1C = { available: false, topType: null, confidence: 0, reason: "Skipped (High consensus in 1A & 1B)", fake_signals: [] };
-    if (needsAiVision) {
-        if (signalVisionVal) signalVisionVal.textContent = "Calling AI...";
-        signal1C = await runStage1CVision(imageElement);
+    // RULE 1: If exactly one type has a strong OCR identifier -> that is the type (skip everything else!)
+    if (ocrResult.available && ocrResult.strongTypes.length === 1) {
+        decidedType = ocrResult.strongTypes[0];
+        decidedConfidence = 0.99; // Capped at 99%
+        decidingRule = "Rule 1: Definitive OCR Strong Identifier (Match)";
     }
-    renderSignal1CUI(signal1C);
-
-    // 3. Majority Voting & Weighted Decision Synthesis
-    const docCandidates = ["aadhaar", "pancard", "passport", "voterid", "other"];
-    const weightedVotes = { aadhaar: 0, pancard: 0, passport: 0, voterid: 0, other: 0 };
-    let totalWeight = 0;
-
-    // Weight 1A (OCR): Pattern match is given highest weight (2.2), keywords (1.4)
-    if (signal1A.available && signal1A.topType) {
-        const ocrWeight = signal1A.patternHit ? 2.2 : (signal1A.score >= 2 ? 1.4 : 0.8);
-        weightedVotes[signal1A.topType] += (signal1A.confidence || 0.8) * ocrWeight;
-        totalWeight += ocrWeight;
+    // RULE 2: If several types have strong identifiers -> pick the highest score and mark low certainty
+    else if (ocrResult.available && ocrResult.strongTypes.length > 1) {
+        const sorted = [...ocrResult.strongTypes].sort((a, b) => ocrResult.scores[b].score - ocrResult.scores[a].score);
+        decidedType = sorted[0];
+        candidate1 = sorted[0];
+        candidate2 = sorted[1];
+        decidedConfidence = 0.82; // Below 0.85
+        isLowCertainty = true;
+        decidingRule = "Rule 2: Multiple Strong OCR Identifiers (Highest Score, Low Certainty)";
     }
 
-    // Weight 1B (Model): Weight 1.5
-    if (signal1B.available && signal1B.topType) {
-        const modelWeight = 1.5;
-        weightedVotes[signal1B.topType] += (signal1B.confidence || 0.7) * modelWeight;
-        totalWeight += modelWeight;
-    }
+    let modelResult = { available: false, topType: null, confidence: 0, reason: "Skipped by Rule 1" };
+    // RULE 3: Otherwise check ./model-doctype prediction if top class >= 0.85 and no other class > 0.30
+    if (!decidedType) {
+        modelResult = await runStage1BClassifier(imageElement);
+        renderSignal1BUI(modelResult);
 
-    // Weight 1C (Vision AI): Weight 1.8
-    if (signal1C.available && signal1C.topType) {
-        const aiWeight = 1.8;
-        weightedVotes[signal1C.topType] += (signal1C.confidence || 0.85) * aiWeight;
-        totalWeight += aiWeight;
-    }
-
-    let finalType = "other";
-    let highestScore = -1;
-    for (const [candidate, score] of Object.entries(weightedVotes)) {
-        if (score > highestScore) {
-            highestScore = score;
-            finalType = candidate;
+        if (modelResult.available && modelResult.topType !== "other") {
+            if (modelResult.topProb >= MODEL_DOCTYPE_HIGH_CONF && modelResult.secondProb <= MODEL_DOCTYPE_LOW_RIVAL) {
+                decidedType = modelResult.topType;
+                decidedConfidence = Math.min(0.99, modelResult.topProb);
+                decidingRule = `Rule 3: Dedicated Doctype Classifier Model (Top Prob: ${(modelResult.topProb * 100).toFixed(1)}%)`;
+            }
         }
+    } else {
+        renderSignal1BUI(modelResult);
     }
 
-    const normalizedConfidence = totalWeight > 0 ? (highestScore / totalWeight) : 0;
-    const isRecognized = (finalType !== "other" && normalizedConfidence >= MIN_TYPE_CONFIDENCE);
+    let visionResult = { available: false, topType: null, confidence: 0, reason: "Skipped", fake_signals: [] };
+    // RULE 4: Otherwise (optional) call the vision-LLM endpoint /api/verify-doc-type
+    if (!decidedType) {
+        if (signalVisionVal) signalVisionVal.textContent = "Calling AI...";
+        visionResult = await runStage1CVision(imageElement);
+        renderSignal1CUI(visionResult);
 
-    // Format Signal Agreement String for Display
+        if (visionResult.available && visionResult.topType !== "other" && visionResult.confidence >= MIN_TYPE_CONFIDENCE) {
+            decidedType = visionResult.topType;
+            decidedConfidence = Math.min(0.99, visionResult.confidence);
+            decidingRule = `Rule 4: Gemini Vision LLM Visual Layout Inspection (${(visionResult.confidence * 100).toFixed(1)}%)`;
+        }
+    } else {
+        renderSignal1CUI(visionResult);
+    }
+
+    // RULE 5: Otherwise show "Could not confidently identify the document"
+    if (!decidedType || decidedType === "other") {
+        decidedType = "unrecognized";
+        decidedConfidence = 0;
+        decidingRule = "Rule 5: Unrecognized / Insufficient Confidence";
+    }
+
+    // Format Signal Agreement String
     const agreementTokens = [];
-    if (signal1A.available && signal1A.topType) agreementTokens.push(`OCR: ${signal1A.topType}`);
-    if (signal1B.available && signal1B.topType) agreementTokens.push(`Model: ${signal1B.topType}`);
-    if (signal1C.available && signal1C.topType) agreementTokens.push(`AI: ${signal1C.topType}`);
-    const signalsAgreementStr = agreementTokens.length > 0 ? agreementTokens.join(" • ") : "No clear signals";
+    if (ocrResult.available && ocrResult.strongTypes.length > 0) agreementTokens.push(`OCR: ${ocrResult.strongTypes.join('/')}`);
+    if (modelResult.available && modelResult.topType) agreementTokens.push(`Model: ${modelResult.topType}`);
+    if (visionResult.available && visionResult.topType) agreementTokens.push(`AI: ${visionResult.topType}`);
+    const signalsAgreementStr = agreementTokens.length > 0 ? agreementTokens.join(" • ") : "No strong identifiers";
 
-    return {
-        finalType: isRecognized ? finalType : "unrecognized",
-        confidence: normalizedConfidence,
-        isRecognized,
+    const stage1Decision = {
+        finalType: decidedType,
+        confidence: Math.min(0.99, decidedConfidence), // Cap at 99%
+        decidingRule,
+        isLowCertainty,
+        candidate1,
+        candidate2,
+        isRecognized: (decidedType !== "unrecognized" && decidedType !== "other"),
         signalsAgreementStr,
-        signal1A,
-        signal1B,
-        signal1C
+        ocrResult,
+        modelResult,
+        visionResult
     };
+
+    // Console Logging for Step 2
+    console.log("[DEBUG Stage 1 Decision]", stage1Decision);
+    renderDebugPanel(stage1Decision);
+
+    return stage1Decision;
 }
 
 // ==========================================================================
-// STAGE 2: Authenticity Check (ORIGINAL vs FAKE vs SUSPICIOUS vs LOW CONFIDENCE)
+// 9. STEP 6: STAGE 2 Authenticity Verification (Only Selected Type Model)
 // ==========================================================================
 async function executeStage2Authenticity(imageElement, currentDocTypeId, stage1Result) {
     // 1. Run ONLY the selected document type's authenticity model
     const activeModel = await loadModelForDocType(currentDocTypeId);
-    const predictions = await activeModel.predict(imageElement);
+    
+    // Run with letterboxed 224x224 and rotation averaging
+    const { averagedPreds } = await predictWithRotations(activeModel, imageElement);
 
     // 2. Perform Client-Side Basic Image Quality Checks
     const quality = analyzeImageQuality(imageElement);
 
     // 3. Gather Fake Signals from Stage 1C Vision LLM
-    const aiFakeSignals = stage1Result.signal1C.fake_signals || [];
+    const aiFakeSignals = stage1Result.visionResult.fake_signals || [];
 
     // Parse model probabilities
     let originalProb = 0;
     let fakeProb = 0;
-    predictions.forEach(p => {
+    averagedPreds.forEach(p => {
         const norm = normalizeClassName(p.className);
         if (norm === "ORIGINAL") originalProb += p.probability;
         if (norm === "FAKE") fakeProb += p.probability;
@@ -910,34 +1056,34 @@ async function executeStage2Authenticity(imageElement, currentDocTypeId, stage1R
         verdictTitleText = "LOW CONFIDENCE";
         const issues = [];
         if (quality.isBlurry) issues.push("blur detected");
-        if (quality.isExtremeDark) issues.push("dark lighting");
+        if (quality.isExtremeDark) issues.push("low lighting");
         if (quality.isLowRes) issues.push("low resolution");
-        verdictDescText = `Image quality is degraded (${issues.join(', ')}). Please upload a clearer image.`;
+        verdictDescText = `Low confidence – please upload a clearer image (${issues.join(', ')}).`;
     }
     // b) Conflicting Signals or Moire/Screen Photo -> SUSPICIOUS
     else if (
         (fakeProb < 0.4 && aiFakeSignals.length > 0) ||
-        (fakeProb >= 0.5 && stage1Result.signal1C.available && aiFakeSignals.length === 0 && stage1Result.signal1C.confidence > 0.85) ||
+        (fakeProb >= 0.5 && stage1Result.visionResult.available && aiFakeSignals.length === 0 && stage1Result.visionResult.confidence > 0.85) ||
         quality.hasScreenArtifacts
     ) {
         verdictState = "SUSPICIOUS";
         verdictTitleText = "SUSPICIOUS";
         verdictDescText = quality.hasScreenArtifacts ?
             "Potential screen-capture/display moiré detected. Manual verification recommended." :
-            "Discrepancy detected between neural model and AI visual inspection. Document requires manual review.";
+            "Discrepancy detected between neural model and AI visual inspection. Manual inspection recommended.";
     }
     // c) FAKE Verdict
     else if (fakeProb >= 0.5 || aiFakeSignals.length >= 2) {
         verdictState = "FAKE";
         verdictTitleText = "FAKE";
-        verdictDescText = `Potential fake or manipulated ${docConfig.label} detected (${(fakeProb * 100).toFixed(1)}% confidence).`;
+        verdictDescText = `Potential fake or manipulated ${docConfig.label} detected (${Math.min(99, Math.round(fakeProb * 100))}% confidence).`;
         confidenceScore = fakeProb;
     }
     // d) ORIGINAL Verdict
     else {
         verdictState = "ORIGINAL";
         verdictTitleText = "ORIGINAL";
-        verdictDescText = `Authentic ${docConfig.label} detected with ${(originalProb * 100).toFixed(1)}% confidence.`;
+        verdictDescText = `Authentic ${docConfig.label} detected with ${Math.min(99, Math.round(originalProb * 100))}% confidence.`;
         confidenceScore = originalProb;
     }
 
@@ -945,17 +1091,17 @@ async function executeStage2Authenticity(imageElement, currentDocTypeId, stage1R
         verdictState,
         verdictTitleText,
         verdictDescText,
-        confidenceScore,
+        confidenceScore: Math.min(0.99, confidenceScore),
         originalProb,
         fakeProb,
-        predictions,
+        predictions: averagedPreds,
         quality,
         aiFakeSignals
     };
 }
 
 // ==========================================================================
-// Orchestrator: Full Two-Stage Execution Pipeline
+// 10. Orchestrator: Full Two-Stage Execution Pipeline
 // ==========================================================================
 async function executeTwoStagePipeline(imageElement, isLive = false) {
     if (!imageElement) return;
@@ -968,10 +1114,10 @@ async function executeTwoStagePipeline(imageElement, isLive = false) {
     const startTime = performance.now();
 
     try {
-        // --- STAGE 1: 3-SIGNAL DOCUMENT TYPE VALIDATION ---
+        // --- STAGE 1: DOCUMENT TYPE DETECTION (Priority Order) ---
         const stage1 = await executeStage1Validation(imageElement);
 
-        // Case A: Unrecognized Document (< 0.75 confidence or 'other')
+        // Case A: Unrecognized Document
         if (!stage1.isRecognized) {
             const duration = Math.round(performance.now() - startTime);
             showUnrecognizedCard(stage1, duration);
@@ -985,8 +1131,7 @@ async function executeTwoStagePipeline(imageElement, isLive = false) {
             return;
         }
 
-        // --- STAGE 2: AUTHENTICITY & MULTI-FACTOR AUDIT ---
-        // Run ONLY when finalType === currentDocType
+        // --- STAGE 2: AUTHENTICITY VERIFICATION (Only Selected Type Model) ---
         const stage2 = await executeStage2Authenticity(imageElement, currentDocType, stage1);
         const duration = Math.round(performance.now() - startTime);
 
@@ -1012,7 +1157,7 @@ async function classifyActiveImage() {
 }
 
 // ==========================================================================
-// UI Rendering & Audit Presentation
+// 11. UI Rendering, Warning Cards & Debug Panel
 // ==========================================================================
 function normalizeClassName(rawLabel) {
     if (!rawLabel) return "UNKNOWN";
@@ -1023,20 +1168,22 @@ function normalizeClassName(rawLabel) {
 }
 
 function updateSignalsUIInProgress() {
-    if (signalOcrVal) signalOcrVal.textContent = "Scanning...";
+    if (signalOcrVal) signalOcrVal.textContent = "Scanning OCR...";
     if (signalModelVal) signalModelVal.textContent = doctypeClassifierModel ? "Predicting..." : "Not Loaded";
     if (signalVisionVal) signalVisionVal.textContent = "Standing by";
 }
 
 function renderSignal1AUI(s1A) {
     if (!signalOcrVal) return;
-    if (s1A.available && s1A.topType) {
-        signalOcrVal.textContent = `${DOC_TYPES[s1A.topType]?.label || s1A.topType} (${Math.round(s1A.confidence * 100)}%)`;
-        signalOcrSub.textContent = s1A.patternHit ? "Regex Pattern Match" : `${s1A.keywordHits.length} Keywords`;
+    if (s1A.available && s1A.strongTypes.length > 0) {
+        const topType = s1A.strongTypes[0];
+        signalOcrVal.textContent = `${DOC_TYPES[topType]?.label || topType} (Strong)`;
+        const hits = s1A.scores[topType];
+        signalOcrSub.textContent = hits.patternHits.length > 0 ? "Regex Pattern Hit" : `${hits.strongHits.length} Strong Keywords`;
         document.getElementById("signal-ocr-card")?.classList.add("hit-agree");
     } else {
-        signalOcrVal.textContent = "No Keywords";
-        signalOcrSub.textContent = s1A.reason || "0 Hits";
+        signalOcrVal.textContent = "No Strong Hits";
+        signalOcrSub.textContent = s1A.reason || "0 Strong Identifiers";
         document.getElementById("signal-ocr-card")?.classList.add("hit-neutral");
     }
 }
@@ -1044,12 +1191,13 @@ function renderSignal1AUI(s1A) {
 function renderSignal1BUI(s1B) {
     if (!signalModelVal) return;
     if (s1B.available && s1B.topType) {
-        signalModelVal.textContent = `${s1B.topLabel} (${Math.round(s1B.confidence * 100)}%)`;
-        signalModelSub.textContent = "5-Class Classifier";
+        const pct = Math.min(99, Math.round(s1B.topProb * 100));
+        signalModelVal.textContent = `${s1B.topLabel} (${pct}%)`;
+        signalModelSub.textContent = `2nd: ${Math.round(s1B.secondProb * 100)}%`;
         document.getElementById("signal-model-card")?.classList.add("hit-agree");
     } else {
-        signalModelVal.textContent = "Unavailable";
-        signalModelSub.textContent = "Train ./model-doctype";
+        signalModelVal.textContent = "Not Loaded";
+        signalModelSub.textContent = "./model-doctype";
         document.getElementById("signal-model-card")?.classList.add("hit-neutral");
     }
 }
@@ -1057,7 +1205,8 @@ function renderSignal1BUI(s1B) {
 function renderSignal1CUI(s1C) {
     if (!signalVisionVal) return;
     if (s1C.available && s1C.topType) {
-        signalVisionVal.textContent = `${s1C.topLabel} (${Math.round(s1C.confidence * 100)}%)`;
+        const pct = Math.min(99, Math.round(s1C.confidence * 100));
+        signalVisionVal.textContent = `${s1C.topLabel} (${pct}%)`;
         signalVisionSub.textContent = s1C.fake_signals.length > 0 ? `${s1C.fake_signals.length} Flags` : "Clean Layout";
         document.getElementById("signal-vision-card")?.classList.add("hit-agree");
     } else {
@@ -1084,22 +1233,41 @@ function showMismatchCard(stage1, durationMs) {
     if (doctypeWarningCard) {
         doctypeWarningCard.style.display = 'flex';
         doctypeWarningIcon.className = "fa-solid fa-triangle-exclamation";
-        doctypeWarningTitle.textContent = "Wrong Document Type";
 
         const selectedLabel = DOC_TYPES[currentDocType]?.label || currentDocType;
         const detectedLabel = DOC_TYPES[stage1.finalType]?.label || stage1.finalType;
-        const confPct = Math.round(stage1.confidence * 100);
+        const confPct = Math.min(99, Math.round(stage1.confidence * 100)); // Capped at 99%
 
-        doctypeWarningDesc.textContent = `⚠ Wrong document type. You selected ${selectedLabel}, but the uploaded image looks like a ${detectedLabel} (confidence ${confPct}%). Please select the correct type or upload the right document.`;
+        // If confidence < 0.85, show "Not sure" with top 2 candidates
+        if (stage1.isLowCertainty && stage1.candidate1 && stage1.candidate2) {
+            const cand1Label = DOC_TYPES[stage1.candidate1]?.label || stage1.candidate1;
+            const cand2Label = DOC_TYPES[stage1.candidate2]?.label || stage1.candidate2;
+            doctypeWarningTitle.textContent = "Not Sure – Please Confirm Document Type";
+            doctypeWarningDesc.textContent = `The uploaded image shows signs of both ${cand1Label} and ${cand2Label}. Please select which document type you uploaded.`;
+            doctypeWarningAction.innerHTML = `
+                <button class="btn btn-switch" type="button" onclick="selectDocumentType('${stage1.candidate1}')" style="margin-right: 0.5rem;">
+                    Confirm ${cand1Label}
+                </button>
+                <button class="btn btn-outline" type="button" onclick="selectDocumentType('${stage1.candidate2}')">
+                    Confirm ${cand2Label}
+                </button>
+            `;
+            doctypeWarningAction.style.display = "block";
+        } else {
+            doctypeWarningTitle.textContent = "Wrong Document Type";
+            doctypeWarningDesc.textContent = `⚠ Wrong document type. You selected ${selectedLabel}, but the uploaded image looks like a ${detectedLabel} (confidence ${confPct}%). Please select the correct type or upload the right document.`;
+            doctypeWarningAction.innerHTML = `
+                <button class="btn btn-switch" id="doctype-switch-btn" type="button" onclick="selectDocumentType('${stage1.finalType}')">
+                    <i class="fa-solid fa-repeat"></i> Switch to ${detectedLabel}
+                </button>
+            `;
+            doctypeWarningAction.style.display = "block";
+        }
 
         if (signalsAgreementBox && signalsAgreementText) {
             signalsAgreementBox.style.display = 'inline-flex';
-            signalsAgreementText.textContent = `Signals: ${stage1.signalsAgreementStr}`;
+            signalsAgreementText.textContent = `Decision: ${stage1.decidingRule}`;
         }
-
-        doctypeWarningAction.style.display = "block";
-        doctypeSwitchBtnLabel.textContent = `Switch to ${detectedLabel}`;
-        doctypeSwitchBtn.onclick = () => selectDocumentType(stage1.finalType);
     }
 
     updateWhyResultAudit(stage1, null);
@@ -1123,11 +1291,11 @@ function showUnrecognizedCard(stage1, durationMs) {
         doctypeWarningCard.style.display = 'flex';
         doctypeWarningIcon.className = "fa-solid fa-circle-question";
         doctypeWarningTitle.textContent = "Unrecognized Document";
-        doctypeWarningDesc.textContent = "Unrecognized document. Please upload a clear image of an Aadhaar, PAN, Passport or Voter ID.";
+        doctypeWarningDesc.textContent = "Could not confidently identify the document. Please upload a clearer, full image of an Aadhaar, PAN, Passport or Voter ID.";
 
         if (signalsAgreementBox && signalsAgreementText) {
             signalsAgreementBox.style.display = 'inline-flex';
-            signalsAgreementText.textContent = `Signals: ${stage1.signalsAgreementStr}`;
+            signalsAgreementText.textContent = `Decision: ${stage1.decidingRule}`;
         }
         doctypeWarningAction.style.display = "none";
     }
@@ -1148,8 +1316,9 @@ function displayStage2Results(stage1, stage2, durationMs) {
         inferenceTimeBadge.style.display = 'inline-block';
     }
 
-    // Verdict Card Classes & Icons
-    verdictTopScore.textContent = `${(stage2.confidenceScore * 100).toFixed(1)}%`;
+    // Verdict Top Score: Capped at 99%
+    const scorePct = Math.min(99, Math.round(stage2.confidenceScore * 100));
+    verdictTopScore.textContent = `${scorePct}%`;
     verdictTitle.textContent = stage2.verdictTitleText;
     verdictDesc.textContent = stage2.verdictDescText;
 
@@ -1167,16 +1336,17 @@ function displayStage2Results(stage1, stage2, durationMs) {
         verdictIcon.className = "fa-solid fa-eye-slash";
     }
 
-    // Detected Type Pill inside Verdict Card
+    // Detected Type Pill inside Verdict Card (Capped at 99%)
     if (detectedTypePill && detectedTypeText) {
         const detLabel = DOC_TYPES[stage1.finalType]?.label || stage1.finalType;
-        detectedTypeText.textContent = `Detected: ${detLabel} ${Math.round(stage1.confidence * 100)}%`;
+        const detPct = Math.min(99, Math.round(stage1.confidence * 100));
+        detectedTypeText.textContent = `Detected: ${detLabel} ${detPct}%`;
         detectedTypePill.style.display = 'inline-flex';
     }
 
-    // Progress Bars
-    const origPct = (stage2.originalProb * 100).toFixed(1);
-    const fakePct = (stage2.fakeProb * 100).toFixed(1);
+    // Progress Bars (Capped at 99%)
+    const origPct = Math.min(99, Math.round(stage2.originalProb * 100));
+    const fakePct = Math.min(99, Math.round(stage2.fakeProb * 100));
 
     const origScoreEl = document.getElementById("score-ORIGINAL");
     const origBarEl = document.getElementById("bar-ORIGINAL");
@@ -1201,27 +1371,23 @@ function displayStage2Results(stage1, stage2, durationMs) {
     // AI Chatbot panel activation (Activated for FAKE or SUSPICIOUS)
     if (typeof handleChatbotVisibility === "function") {
         const docLabel = DOC_TYPES[currentDocType]?.label || "Identity Document";
-        handleChatbotVisibility(stage2.verdictState === "FAKE" || stage2.verdictState === "SUSPICIOUS" ? "FAKE" : "ORIGINAL", docLabel, `${(stage2.confidenceScore * 100).toFixed(1)}%`);
+        handleChatbotVisibility(stage2.verdictState === "FAKE" || stage2.verdictState === "SUSPICIOUS" ? "FAKE" : "ORIGINAL", docLabel, `${scorePct}%`);
     }
 }
 
 function updateQualityChips(quality) {
     if (!chipBlur) return;
 
-    // Blur Chip
     chipBlur.className = `quality-chip ${quality.isBlurry ? 'chip-fail' : 'chip-pass'}`;
     chipBlurText.textContent = `Blur: ${quality.isBlurry ? 'Blurry' : 'Sharp'} (Var: ${quality.lapVariance})`;
 
-    // Resolution Chip
     chipRes.className = `quality-chip ${quality.isLowRes ? 'chip-warn' : 'chip-pass'}`;
     chipResText.textContent = `Res: ${quality.naturalWidth}x${quality.naturalHeight}`;
 
-    // Exposure Chip
     const exposurePass = !quality.isExtremeDark && !quality.isExtremeBright;
     chipLight.className = `quality-chip ${exposurePass ? 'chip-pass' : 'chip-fail'}`;
     chipLightText.textContent = `Light: ${quality.isExtremeDark ? 'Too Dark' : (quality.isExtremeBright ? 'Washed Out' : 'Balanced')} (${quality.avgLuminance}/255)`;
 
-    // Moire Chip
     chipMoire.className = `quality-chip ${quality.hasScreenArtifacts ? 'chip-warn' : 'chip-pass'}`;
     chipMoireText.textContent = `Moiré: ${quality.hasScreenArtifacts ? 'Detected (Display Photo)' : 'None'}`;
 }
@@ -1230,20 +1396,45 @@ function updateWhyResultAudit(stage1, stage2) {
     if (!whyResultContent) return;
 
     let html = `<div><strong>STAGE 1: DOCUMENT TYPE DETECTION AUDIT</strong><ul>`;
-    html += `<li><strong>1A. OCR Engine:</strong> ${stage1.signal1A.available ? `${DOC_TYPES[stage1.signal1A.topType]?.label || 'None'} (Score ${stage1.signal1A.score}, Pattern match: ${stage1.signal1A.patternHit ? 'YES' : 'NO'}, Matched: [${stage1.signal1A.keywordHits.join(', ')}])` : (stage1.signal1A.reason || 'Unavailable')}</li>`;
-    html += `<li><strong>1B. Dedicated Classifier (./model-doctype):</strong> ${stage1.signal1B.available ? `${stage1.signal1B.topLabel} (Confidence ${(stage1.signal1B.confidence * 100).toFixed(1)}%)` : (stage1.signal1B.reason || 'Not present')}</li>`;
-    html += `<li><strong>1C. Gemini Vision AI:</strong> ${stage1.signal1C.available ? `${stage1.signal1C.topLabel} (Confidence ${(stage1.signal1C.confidence * 100).toFixed(1)}% - ${stage1.signal1C.reason})` : (stage1.signal1C.reason || 'Skipped')}</li>`;
-    html += `<li><strong>Stage 1 Combined Verdict:</strong> ${stage1.isRecognized ? DOC_TYPES[stage1.finalType]?.label : 'Unrecognized'} (Synthesized Confidence ${(stage1.confidence * 100).toFixed(1)}%)</li>`;
+    html += `<li><strong>Decision Rule:</strong> ${stage1.decidingRule}</li>`;
+    html += `<li><strong>Detected Type:</strong> ${stage1.isRecognized ? DOC_TYPES[stage1.finalType]?.label : 'Unrecognized'} (Confidence: ${Math.min(99, Math.round(stage1.confidence * 100))}%)</li>`;
+
+    // OCR Detail
+    if (stage1.ocrResult.available) {
+        const strongHitsList = [];
+        for (const [id, s] of Object.entries(stage1.ocrResult.scores)) {
+            if (s.isStrong) {
+                strongHitsList.push(`${s.label}: [${s.patternHits.concat(s.strongHits).join(', ')}]`);
+            }
+        }
+        html += `<li><strong>1A. OCR Engine:</strong> ${strongHitsList.length > 0 ? strongHitsList.join(' | ') : 'No strong identifiers found'}</li>`;
+    } else {
+        html += `<li><strong>1A. OCR Engine:</strong> ${stage1.ocrResult.reason || 'Unavailable'}</li>`;
+    }
+
+    // Model Detail
+    if (stage1.modelResult.available) {
+        html += `<li><strong>1B. Doctype Classifier (./model-doctype):</strong> Top: ${stage1.modelResult.topLabel} (${Math.round(stage1.modelResult.topProb * 100)}%), 2nd: ${Math.round(stage1.modelResult.secondProb * 100)}%</li>`;
+    } else {
+        html += `<li><strong>1B. Doctype Classifier:</strong> ${stage1.modelResult.reason}</li>`;
+    }
+
+    // Vision Detail
+    if (stage1.visionResult.available) {
+        html += `<li><strong>1C. Gemini Vision LLM:</strong> ${stage1.visionResult.topLabel} (${Math.round(stage1.visionResult.confidence * 100)}% - ${stage1.visionResult.reason})</li>`;
+    } else {
+        html += `<li><strong>1C. Gemini Vision LLM:</strong> ${stage1.visionResult.reason || 'Skipped'}</li>`;
+    }
     html += `</ul></div>`;
 
     if (stage2) {
         html += `<div style="margin-top: 0.75rem;"><strong>STAGE 2: AUTHENTICITY & IMAGE AUDIT</strong><ul>`;
-        html += `<li><strong>Selected Authenticity Model (${DOC_TYPES[currentDocType]?.label}):</strong> ORIGINAL: ${(stage2.originalProb * 100).toFixed(1)}% | FAKE: ${(stage2.fakeProb * 100).toFixed(1)}%</li>`;
-        html += `<li><strong>Image Quality Checks:</strong> Sharpness Variance: ${stage2.quality.lapVariance} (Threshold: ${BLUR_LAPLACIAN_THRESHOLD}) | Brightness: ${stage2.quality.avgLuminance}/255 | Dimensions: ${stage2.quality.naturalWidth}x${stage2.quality.naturalHeight}</li>`;
+        html += `<li><strong>Selected Authenticity Model (${DOC_TYPES[currentDocType]?.label}):</strong> ORIGINAL: ${Math.min(99, Math.round(stage2.originalProb * 100))}% | FAKE: ${Math.min(99, Math.round(stage2.fakeProb * 100))}%</li>`;
+        html += `<li><strong>Image Quality Metrics:</strong> Laplacian Sharpness: ${stage2.quality.lapVariance} (Threshold: ${BLUR_LAPLACIAN_THRESHOLD}) | Exposure: ${stage2.quality.avgLuminance}/255 | Dimensions: ${stage2.quality.naturalWidth}x${stage2.quality.naturalHeight}</li>`;
         if (stage2.aiFakeSignals.length > 0) {
             html += `<li style="color: #fca5a5;"><strong>AI Tampering Flags:</strong> ${stage2.aiFakeSignals.join("; ")}</li>`;
         } else {
-            html += `<li><strong>AI Tampering Flags:</strong> No tampering or visual anomalies flagged.</li>`;
+            html += `<li><strong>AI Tampering Flags:</strong> No visual tampering anomalies detected.</li>`;
         }
         html += `<li><strong>Final System Verdict:</strong> <span style="text-decoration: underline;">${stage2.verdictTitleText}</span> (${stage2.verdictDescText})</li>`;
         html += `</ul></div>`;
@@ -1252,8 +1443,75 @@ function updateWhyResultAudit(stage1, stage2) {
     whyResultContent.innerHTML = html;
 }
 
+// Render Step 2 Debug Panel Table
+function renderDebugPanel(stage1) {
+    if (!debugPanelBody) return;
+
+    let html = `<div style="margin-bottom: 0.75rem;">
+        <div><strong>Final Decision:</strong> <span style="color: #38bdf8;">${stage1.finalType}</span> | <strong>Confidence:</strong> <span style="color: #4ade80;">${Math.min(99, Math.round(stage1.confidence * 100))}%</span></div>
+        <div><strong>Deciding Rule:</strong> <span style="color: #fbbf24;">${stage1.decidingRule}</span></div>
+    </div>`;
+
+    // OCR Raw Text block (first 300 chars)
+    const rawOcrSnippet = stage1.ocrResult.rawText ? stage1.ocrResult.rawText.substring(0, 300) : "No text extracted";
+    html += `<div><strong>OCR Raw Text (first 300 chars):</strong>
+        <div class="debug-raw-ocr">${rawOcrSnippet.replace(/</g, "&lt;").replace(/>/g, "&gt;")}</div>
+    </div>`;
+
+    // OCR Scores Table
+    html += `<div style="margin-top: 0.75rem;"><strong>OCR Signal Analysis per Document Type:</strong>
+        <table class="debug-table">
+            <thead>
+                <tr>
+                    <th>Doc Type</th>
+                    <th>Strong Keywords Hit</th>
+                    <th>Regex Pattern Hit</th>
+                    <th>Weak Keywords Hit</th>
+                    <th>Score</th>
+                    <th>Strong?</th>
+                </tr>
+            </thead>
+            <tbody>`;
+
+    for (const [id, s] of Object.entries(stage1.ocrResult.scores || {})) {
+        html += `<tr>
+            <td><strong>${s.label}</strong></td>
+            <td>${s.strongHits.length > 0 ? s.strongHits.join(', ') : '–'}</td>
+            <td>${s.patternHits.length > 0 ? s.patternHits.join(', ') : '–'}</td>
+            <td>${s.weakHits.length > 0 ? s.weakHits.join(', ') : '–'}</td>
+            <td>${s.score}</td>
+            <td style="color: ${s.isStrong ? '#4ade80' : '#94a3b8'};">${s.isStrong ? 'YES' : 'NO'}</td>
+        </tr>`;
+    }
+    html += `</tbody></table></div>`;
+
+    // Model Classes Table
+    html += `<div style="margin-top: 0.5rem;"><strong>Doctype Model (./model-doctype) Probabilities:</strong>`;
+    if (stage1.modelResult.available && stage1.modelResult.predictions) {
+        html += `<table class="debug-table"><thead><tr>`;
+        stage1.modelResult.predictions.forEach(p => {
+            html += `<th>${p.className}</th>`;
+        });
+        html += `</tr></thead><tbody><tr>`;
+        stage1.modelResult.predictions.forEach(p => {
+            html += `<td>${(p.probability * 100).toFixed(1)}%</td>`;
+        });
+        html += `</tr></tbody></table>`;
+    } else {
+        html += `<p style="color: #94a3b8; font-style: italic;">Model not loaded (${stage1.modelResult.reason})</p>`;
+    }
+    html += `</div>`;
+
+    // Vision AI Row
+    html += `<div style="margin-top: 0.5rem;"><strong>Vision AI LLM (/api/verify-doc-type):</strong>
+        <div>${stage1.visionResult.available ? `Identified: ${stage1.visionResult.topLabel} (Confidence ${(stage1.visionResult.confidence * 100).toFixed(1)}%) - Reason: ${stage1.visionResult.reason}` : `Status: ${stage1.visionResult.reason}`}</div>
+    </div>`;
+
+    debugPanelBody.innerHTML = html;
+}
+
 // ==========================================================================
-// UI Helpers
+// 12. UI State Helpers
 // ==========================================================================
 function showLoading(isLoading) {
     if (isLoading) {

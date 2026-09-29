@@ -340,13 +340,31 @@
                         </div>
                     </div>
 
+                    <!-- Stage 1 Debug Panel (Activated when ?debug=1 or via toggle) -->
+                    <div class="stage1-debug-panel" id="stage1-debug-panel" style="display: none;">
+                        <div class="debug-panel-header">
+                            <div class="debug-title">
+                                <i class="fa-solid fa-terminal"></i> <span>Stage 1 Decision Debug Inspector</span>
+                            </div>
+                            <span class="badge" id="debug-status-badge">?debug=1 active</span>
+                        </div>
+                        <div class="debug-panel-body" id="debug-panel-body">
+                            <p class="text-muted">Awaiting document classification...</p>
+                        </div>
+                    </div>
+
                     <!-- Input Image Details & Model Metadata -->
                     <div class="model-meta-footer">
                         <div class="meta-item">
-                            <i class="fa-solid fa-sliders"></i> Input Size: <span>224 x 224 px</span>
+                            <i class="fa-solid fa-sliders"></i> Input Size: <span>224 x 224 px (Letterboxed)</span>
                         </div>
                         <div class="meta-item">
                             <i class="fa-solid fa-folder"></i> Active Model: <span id="active-model-folder">./model-aadhaar/</span>
+                        </div>
+                        <div class="meta-item">
+                            <a href="javascript:void(0)" onclick="toggleDebugPanel()" id="debug-toggle-link" style="color: #60a5fa; text-decoration: underline;">
+                                <i class="fa-solid fa-bug"></i> Toggle Debug View
+                            </a>
                         </div>
                     </div>
                 </div>
@@ -361,8 +379,8 @@
         </footer>
     </div>
 
-    <!-- Application Scripts -->
+    <!-- Application Scripts (cache-busted) -->
     <script src="chatbot.js"></script>
-    <script src="script.js"></script>
+    <script src="script.js?v=4"></script>
 </body>
 </html>

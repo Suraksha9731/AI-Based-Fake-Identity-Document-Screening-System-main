@@ -1277,8 +1277,67 @@ body {
     margin-top: 0.4rem;
 }
 
-.why-result-content li {
-    margin-bottom: 0.35rem;
+/* Stage 1 Debug Panel (Activated with ?debug=1) */
+.stage1-debug-panel {
+    margin-top: 1.5rem;
+    background: #090d16;
+    border: 1px solid #334155;
+    border-radius: var(--radius-md);
+    overflow: hidden;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+
+.debug-panel-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0.65rem 1rem;
+    background: #111827;
+    border-bottom: 1px solid #334155;
+    font-size: 0.8rem;
+    font-weight: 700;
+    color: #e2e8f0;
+}
+
+.debug-panel-body {
+    padding: 1rem;
+    font-size: 0.76rem;
+    color: #cbd5e1;
+    overflow-x: auto;
+}
+
+.debug-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 0.5rem;
+    margin-bottom: 0.75rem;
+}
+
+.debug-table th, .debug-table td {
+    padding: 0.45rem 0.65rem;
+    border: 1px solid #1e293b;
+    text-align: left;
+}
+
+.debug-table th {
+    background: #1e293b;
+    color: #94a3b8;
+    font-weight: 600;
+    font-size: 0.73rem;
+}
+
+.debug-raw-ocr {
+    max-height: 120px;
+    overflow-y: auto;
+    background: #020617;
+    padding: 0.6rem;
+    border-radius: var(--radius-sm);
+    color: #a7f3d0;
+    white-space: pre-wrap;
+    word-break: break-all;
+    border: 1px solid #1e293b;
+    margin-top: 0.35rem;
+    font-size: 0.74rem;
 }
 
 .chatbot-panel {
