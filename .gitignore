@@ -1,0 +1,9 @@
+# Temp & OS files
+.DS_Store
+Thumbs.db
+*.log
+*.tmp
+
+# Dependency directories if added later
+node_modules/
+dist/

@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Document Verification - Aadhaar, PAN Card, Passport & Voter ID</title>
+    <!-- Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <!-- Font Awesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Custom Stylesheet -->
+    <link rel="stylesheet" href="style.css">
+    
+    <!-- TensorFlow.js and Teachable Machine Libraries -->
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@latest/dist/tf.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@teachablemachine/image@latest/dist/teachablemachine-image.min.js"></script>
+</head>
+<body>
+    <div class="app-container">
+        <!-- Header -->
+        <header class="app-header">
+            <div class="brand">
+                <div class="brand-icon">
+                    <i class="fa-solid fa-shield-halved"></i>
+                </div>
+                <div>
+                    <h1>AI Document Verification</h1>
+                    <p class="subtitle">Multi-Model Classification &bull; Aadhaar, PAN Card, Passport & Voter ID</p>
+                </div>
+            </div>
+
+            <!-- Header Controls: User Profile, Logout & Status Pill -->
+            <div class="header-right">
+                <div class="user-profile-badge" id="user-profile-badge">
+                    <i class="fa-solid fa-user-circle"></i>
+                    <span id="user-display-name">Demo User</span>
+                </div>
+                <button class="btn btn-outline btn-sm logout-btn" onclick="logout()" title="Sign Out">
+                    <i class="fa-solid fa-right-from-bracket"></i> Logout
+                </button>
+                <div class="model-status-badge status-loading" id="model-status">
+                    <span class="status-dot"></span>
+                    <span id="model-status-text">Loading Models...</span>
+                </div>
+            </div>
+        </header>
+
+        <!-- Main Content Area -->
+        <main class="main-layout">
+            <!-- Left Side: Input & Media Section -->
+            <section class="card input-section">
+                <!-- Data-Driven Document Type Selector -->
+                <div class="doc-selector-container">
+                    <label class="section-label"><i class="fa-solid fa-id-card"></i> Select Document Type</label>
+                    <div class="doc-tabs" id="doc-tabs-container">
+                        <!-- Populated dynamically via script.js from DOC_TYPES registry -->
+                        <button class="doc-btn active" id="doc-aadhaar-btn" onclick="selectDocumentType('aadhaar')">
+                            <i class="fa-solid fa-address-card"></i> Aadhaar Card
+                        </button>
+                        <button class="doc-btn" id="doc-pancard-btn" onclick="selectDocumentType('pancard')">
+                            <i class="fa-solid fa-id-card"></i> PAN Card
+                        </button>
+                        <button class="doc-btn" id="doc-passport-btn" onclick="selectDocumentType('passport')">
+                            <i class="fa-solid fa-passport"></i> Passport
+                        </button>
+                        <button class="doc-btn" id="doc-voterid-btn" onclick="selectDocumentType('voterid')">
+                            <i class="fa-solid fa-check-to-slot"></i> Voter ID Card
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Mode Tabs (Upload vs Webcam) -->
+                <div class="tabs">
+                    <button class="tab-btn active" id="tab-upload-btn" onclick="switchTab('upload')">
+                        <i class="fa-solid fa-cloud-arrow-up"></i> Upload Image
+                    </button>
+                    <button class="tab-btn" id="tab-webcam-btn" onclick="switchTab('webcam')">
+                        <i class="fa-solid fa-camera"></i> Live Webcam
+                    </button>
+                </div>
+
+                <!-- Tab Content: File Upload -->
+                <div class="tab-content active" id="upload-tab">
+                    <div class="drop-zone" id="drop-zone">
+                        <i class="fa-solid fa-file-image drop-icon"></i>
+                        <h3 class="drop-title">Drag & Drop document image here</h3>
+                        <p class="drop-hint">Supports JPG, PNG, WEBP (Max 10MB)</p>
+                        <span class="drop-divider">or</span>
+                        <label for="file-input" class="btn btn-primary">
+                            <i class="fa-solid fa-folder-open"></i> Browse Files
+                        </label>
+                        <input type="file" id="file-input" accept="image/*" class="file-input-hidden">
+                    </div>
+                </div>
+
+                <!-- Tab Content: Webcam -->
+                <div class="tab-content" id="webcam-tab">
+                    <div class="webcam-container">
+                        <video id="webcam-video" autoplay playsinline muted></video>
+                        <div class="webcam-overlay" id="webcam-overlay">
+                            <i class="fa-solid fa-video-slash webcam-off-icon"></i>
+                            <p>Webcam is currently inactive</p>
+                        </div>
+                    </div>
+                    <div class="webcam-controls">
+                        <button class="btn btn-success" id="start-webcam-btn" onclick="startWebcam()">
+                            <i class="fa-solid fa-power-off"></i> Start Camera
+                        </button>
+                        <button class="btn btn-secondary" id="stop-webcam-btn" onclick="stopWebcam()" disabled>
+                            <i class="fa-solid fa-stop"></i> Stop
+                        </button>
+                        <button class="btn btn-primary" id="capture-webcam-btn" onclick="captureWebcamImage()" disabled>
+                            <i class="fa-solid fa-camera-retro"></i> Capture & Classify
+                        </button>
+                        <button class="btn btn-outline" id="live-predict-btn" onclick="toggleLivePredict()" disabled>
+                            <i class="fa-solid fa-circle-dot"></i> <span id="live-predict-text">Live Classify</span>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Media Preview Area (Shown when image is selected/captured) -->
+                <div class="preview-card" id="preview-card" style="display: none;">
+                    <div class="preview-header">
+                        <span><i class="fa-solid fa-image"></i> Active Image Preview</span>
+                        <button class="btn-icon" onclick="clearSelectedImage()" title="Remove Image">
+                            <i class="fa-solid fa-xmark"></i>
+                        </button>
+                    </div>
+                    <div class="preview-image-wrapper">
+                        <img id="preview-image" alt="Selected Preview" crossorigin="anonymous">
+                    </div>
+                    <div class="preview-footer">
+                        <span id="image-info-name">image.png</span>
+                        <button class="btn btn-primary btn-sm" id="classify-btn" onclick="classifyActiveImage()">
+                            <i class="fa-solid fa-wand-magic-sparkles"></i> Classify Now
+                        </button>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Right Side: Classification Results Section -->
+            <section class="card results-section">
+                <div class="results-header">
+                    <h2><i class="fa-solid fa-chart-pie"></i> Classification Results</h2>
+                    <span class="badge" id="inference-time-badge" style="display: none;">Inference: 0ms</span>
+                </div>
+
+                <!-- Document Result Title Banner -->
+                <div class="doc-result-banner" id="doc-result-banner">
+                    <i class="fa-solid fa-address-card" id="doc-result-icon"></i>
+                    <span id="doc-result-title">Aadhaar Card Check Result</span>
+                </div>
+
+                <!-- Error Container -->
+                <div class="error-banner" id="error-banner" style="display: none;">
+                    <i class="fa-solid fa-triangle-exclamation"></i>
+                    <div id="error-message">An error occurred while processing.</div>
+                </div>
+
+                <!-- Empty State -->
+                <div class="results-empty" id="results-empty">
+                    <div class="empty-icon">
+                        <i class="fa-solid fa-microchip"></i>
+                    </div>
+                    <h3>Ready for Classification</h3>
+                    <p>Select document type above, then upload an image or capture a photo to get instant ORIGINAL vs FAKE predictions.</p>
+                </div>
+
+                <!-- Loading State -->
+                <div class="results-loading" id="results-loading" style="display: none;">
+                    <div class="spinner"></div>
+                    <p>Analyzing document features with neural network...</p>
+                </div>
+
+                <!-- Active Classification Output -->
+                <div class="results-content" id="results-content" style="display: none;">
+                    <!-- Document Type Validation Alert Card (Stage 1 Warning) -->
+                    <div class="doctype-warning-card" id="doctype-warning-card" style="display: none;">
+                        <div class="doctype-warning-icon-wrap" id="doctype-warning-icon-wrap">
+                            <i class="fa-solid fa-triangle-exclamation" id="doctype-warning-icon"></i>
+                        </div>
+                        <div class="doctype-warning-info">
+                            <div class="doctype-warning-badge" id="doctype-warning-badge">STAGE 1 &bull; DOCUMENT VALIDATION</div>
+                            <h3 class="doctype-warning-title" id="doctype-warning-title">Wrong Document Type</h3>
+                            <p class="doctype-warning-desc" id="doctype-warning-desc"></p>
+                            <div class="doctype-warning-action" id="doctype-warning-action">
+                                <button class="btn btn-switch" id="doctype-switch-btn" type="button">
+                                    <i class="fa-solid fa-repeat"></i> <span id="doctype-switch-btn-label">Switch Document Type</span>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Main Verdict Card -->
+                    <div class="verdict-card" id="verdict-card">
+                        <div class="verdict-icon-wrap" id="verdict-icon-wrap">
+                            <i class="fa-solid fa-circle-check" id="verdict-icon"></i>
+                        </div>
+                        <div class="verdict-info">
+                            <span class="verdict-label">PREDICTED CLASS</span>
+                            <h2 class="verdict-title" id="verdict-title">ORIGINAL</h2>
+                            <p class="verdict-desc" id="verdict-desc">High confidence match detected.</p>
+                            <div class="detected-type-pill" id="detected-type-pill" style="display: none;">
+                                <i class="fa-solid fa-circle-check"></i>
+                                <span id="detected-type-text">Detected: Passport 96%</span>
+                            </div>
+                        </div>
+                        <div class="verdict-score" id="verdict-score-box">
+                            <span class="score-value" id="verdict-top-score">99.8%</span>
+                            <span class="score-label">Confidence</span>
+                        </div>
+                    </div>
+
+                    <!-- Progress Bars Breakdown -->
+                    <div class="breakdown-section" id="breakdown-section">
+                        <h3>Class Probability Breakdown</h3>
+                        
+                        <!-- Original Class Row -->
+                        <div class="class-row" id="row-ORIGINAL">
+                            <div class="class-meta">
+                                <span class="class-name">
+                                    <i class="fa-solid fa-shield-check class-badge-icon original-icon"></i> ORIGINAL
+                                </span>
+                                <span class="class-percentage" id="score-ORIGINAL">0%</span>
+                            </div>
+                            <div class="progress-track">
+                                <div class="progress-bar bar-original" id="bar-ORIGINAL" style="width: 0%;"></div>
+                            </div>
+                        </div>
+
+                        <!-- Fake Class Row -->
+                        <div class="class-row" id="row-FAKE">
+                            <div class="class-meta">
+                                <span class="class-name">
+                                    <i class="fa-solid fa-triangle-exclamation class-badge-icon fake-icon"></i> FAKE
+                                </span>
+                                <span class="class-percentage" id="score-FAKE">0%</span>
+                            </div>
+                            <div class="progress-track">
+                                <div class="progress-bar bar-fake" id="bar-FAKE" style="width: 0%;"></div>
+                            </div>
+                        </div>
+
+                        <!-- Dynamic fallback for any additional model classes if present -->
+                        <div id="dynamic-classes-container"></div>
+                    </div>
+
+                    <!-- AI Security Chatbot Panel (Activated ONLY for FAKE results) -->
+                    <div class="chatbot-panel" id="chatbot-panel" style="display: none;">
+                        <div class="chatbot-header">
+                            <div class="chatbot-title">
+                                <i class="fa-solid fa-robot chatbot-avatar-icon"></i>
+                                <div>
+                                    <h3>AI Document Security Assistant</h3>
+                                    <span class="chatbot-subtitle">Powered by Google Gemini AI</span>
+                                </div>
+                            </div>
+                            <button class="btn btn-primary btn-sm" id="explain-trigger-btn" onclick="requestFakeExplanation()">
+                                <i class="fa-solid fa-wand-magic-sparkles"></i> Why was this flagged as fake?
+                            </button>
+                        </div>
+
+                        <!-- Chat Messages Container -->
+                        <div class="chat-messages" id="chat-messages">
+                            <div class="chat-bubble bot-bubble hint-bubble" id="chat-hint">
+                                <i class="fa-solid fa-circle-info"></i> Click <strong>"Why was this flagged as fake?"</strong> above to generate an AI explanation of potential red flags.
+                            </div>
+                        </div>
+
+                        <!-- Chat Input Controls -->
+                        <div class="chat-input-row" id="chat-input-row">
+                            <input type="text" id="chat-user-input" placeholder="Ask a follow-up question about this document..." onkeypress="handleChatKeyPress(event)">
+                            <button class="btn btn-primary" id="chat-send-btn" onclick="sendUserChatMessage()">
+                                <i class="fa-solid fa-paper-plane"></i>
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Input Image Details & Model Metadata -->
+                    <div class="model-meta-footer">
+                        <div class="meta-item">
+                            <i class="fa-solid fa-sliders"></i> Input Size: <span>224 x 224 px</span>
+                        </div>
+                        <div class="meta-item">
+                            <i class="fa-solid fa-folder"></i> Active Model: <span id="active-model-folder">./model-aadhaar/</span>
+                        </div>
+                    </div>
+                </div>
+            </section>
+        </main>
+
+        <!-- Hidden canvas for webcam frame snapshot -->
+        <canvas id="hidden-canvas" style="display: none;" width="224" height="224"></canvas>
+
+        <footer class="app-footer">
+            <p>Powered by TensorFlow.js, Teachable Machine & Google Gemini AI &bull; Multi-Model Document Verification</p>
+        </footer>
+    </div>
+
+    <!-- Application Scripts -->
+    <script src="chatbot.js"></script>
+    <script src="script.js"></script>
+</body>
+</html>

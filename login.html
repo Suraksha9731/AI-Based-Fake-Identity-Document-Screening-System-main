@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Login - AI Document Verification</title>
+    <!-- Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <!-- Font Awesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Shared Stylesheet -->
+    <link rel="stylesheet" href="style.css">
+</head>
+<body class="auth-page">
+    <div class="auth-container">
+        <!-- Auth Card -->
+        <div class="card auth-card">
+            <!-- Brand Logo Header -->
+            <div class="auth-header">
+                <div class="brand-icon">
+                    <i class="fa-solid fa-shield-halved"></i>
+                </div>
+                <h2>AI Document Verification</h2>
+                <p class="subtitle">Sign in to access Aadhaar & Passport Fake Detection Portal</p>
+            </div>
+
+            <!-- Auth Mode Switcher (Login vs Register) -->
+            <div class="auth-tabs">
+                <button class="auth-tab-btn active" id="tab-login-btn" onclick="switchAuthTab('login')">
+                    <i class="fa-solid fa-right-to-bracket"></i> Sign In
+                </button>
+                <button class="auth-tab-btn" id="tab-register-btn" onclick="switchAuthTab('register')">
+                    <i class="fa-solid fa-user-plus"></i> Register
+                </button>
+            </div>
+
+            <!-- Alert Notification Banner -->
+            <div class="auth-alert" id="auth-alert" style="display: none;">
+                <i class="fa-solid fa-circle-exclamation" id="alert-icon"></i>
+                <span id="alert-message">Invalid credentials provided.</span>
+            </div>
+
+            <!-- LOGIN FORM -->
+            <form id="login-form" class="auth-form active" onsubmit="handleLogin(event)">
+                <div class="form-group">
+                    <label for="login-email">Email or Username</label>
+                    <div class="input-wrapper">
+                        <i class="fa-solid fa-envelope input-icon"></i>
+                        <input type="text" id="login-email" placeholder="name@example.com" required autocomplete="username">
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label for="login-password">Password</label>
+                    <div class="input-wrapper">
+                        <i class="fa-solid fa-lock input-icon"></i>
+                        <input type="password" id="login-password" placeholder="Enter password" required autocomplete="current-password">
+                        <button type="button" class="pass-toggle-btn" onclick="togglePasswordVisibility('login-password', this)" title="Show/Hide Password">
+                            <i class="fa-solid fa-eye"></i>
+                        </button>
+                    </div>
+                </div>
+
+                <button type="submit" class="btn btn-primary btn-full">
+                    <i class="fa-solid fa-right-to-bracket"></i> Sign In
+                </button>
+
+                <div class="auth-demo-hint">
+                    <i class="fa-solid fa-lightbulb"></i> Demo credentials pre-registered:<br>
+                    <strong>Email:</strong> <code>admin@example.com</code> &bull; <strong>Password:</strong> <code>password123</code>
+                </div>
+            </form>
+
+            <!-- REGISTER FORM -->
+            <form id="register-form" class="auth-form" onsubmit="handleRegister(event)">
+                <div class="form-group">
+                    <label for="reg-name">Full Name</label>
+                    <div class="input-wrapper">
+                        <i class="fa-solid fa-user input-icon"></i>
+                        <input type="text" id="reg-name" placeholder="John Doe" required autocomplete="name">
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label for="reg-email">Email Address</label>
+                    <div class="input-wrapper">
+                        <i class="fa-solid fa-envelope input-icon"></i>
+                        <input type="email" id="reg-email" placeholder="name@example.com" required autocomplete="email">
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label for="reg-password">Password</label>
+                    <div class="input-wrapper">
+                        <i class="fa-solid fa-lock input-icon"></i>
+                        <input type="password" id="reg-password" placeholder="Min 6 characters" required autocomplete="new-password">
+                        <button type="button" class="pass-toggle-btn" onclick="togglePasswordVisibility('reg-password', this)" title="Show/Hide Password">
+                            <i class="fa-solid fa-eye"></i>
+                        </button>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label for="reg-confirm-password">Confirm Password</label>
+                    <div class="input-wrapper">
+                        <i class="fa-solid fa-lock-keyhole input-icon"></i>
+                        <input type="password" id="reg-confirm-password" placeholder="Re-enter password" required autocomplete="new-password">
+                    </div>
+                </div>
+
+                <button type="submit" class="btn btn-success btn-full">
+                    <i class="fa-solid fa-user-check"></i> Create Account
+                </button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Login Auth Script -->
+    <script src="login.js"></script>
+</body>
+</html>
