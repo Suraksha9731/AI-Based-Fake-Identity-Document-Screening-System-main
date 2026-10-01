@@ -1,0 +1,17 @@
+{
+  "tfjsVersion": "1.7.4",
+  "tmVersion": "2.4.16",
+  "packageVersion": "0.8.4-alpha2",
+  "packageName": "@teachablemachine/image",
+  "timeStamp": "2026-09-29T12:00:00.000Z",
+  "userMetadata": {},
+  "modelName": "tm-my-image-model",
+  "labels": [
+    "aadhaar",
+    "pan",
+    "passport",
+    "voter",
+    "other"
+  ],
+  "imageSize": 224
+}

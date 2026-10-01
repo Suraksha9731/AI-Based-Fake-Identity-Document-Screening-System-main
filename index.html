@@ -39,6 +39,10 @@
                     <i class="fa-solid fa-user-circle"></i>
                     <span id="user-display-name">Demo User</span>
                 </div>
+                <div class="model-status-badge status-loading" id="backend-status-badge" title="Click to view or edit Google Colab / Backend URL" onclick="promptBackendUrl()" style="cursor: pointer;">
+                    <span class="status-dot" id="header-backend-dot"></span>
+                    <span id="backend-status-text">Backend: Connecting...</span>
+                </div>
                 <button class="btn btn-outline btn-sm logout-btn" onclick="logout()" title="Sign Out">
                     <i class="fa-solid fa-right-from-bracket"></i> Logout
                 </button>
@@ -48,6 +52,12 @@
                 </div>
             </div>
         </header>
+
+        <!-- Document-Type Model Missing Warning Banner -->
+        <div id="doctype-missing-banner" class="doctype-missing-banner" style="display: none; background: rgba(245, 158, 11, 0.15); border: 1px solid #f59e0b; color: #fde68a; padding: 0.85rem 1.5rem; border-radius: 8px; margin: 1rem 1.5rem 0.5rem; align-items: center; gap: 0.75rem; font-size: 0.95rem;">
+            <i class="fa-solid fa-triangle-exclamation" style="color: #f59e0b; font-size: 1.15rem;"></i>
+            <span><strong>Document-type model missing</strong> &ndash; run <code>train_doctype.py</code> to build the dedicated 5-class model.</span>
+        </div>
 
         <!-- Main Content Area -->
         <main class="main-layout">

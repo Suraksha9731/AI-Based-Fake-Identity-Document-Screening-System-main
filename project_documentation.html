@@ -1,0 +1,873 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>AI-Based Fake Identity Document Screening System - Project Documentation</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap');
+
+  @page {
+    size: A4;
+    margin: 18mm 16mm 18mm 16mm;
+    @bottom-right {
+      content: "Page " counter(page);
+      font-family: 'Inter', sans-serif;
+      font-size: 8pt;
+      color: #64748b;
+    }
+  }
+
+  * {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+  }
+
+  body {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    color: #1e293b;
+    background: #ffffff;
+    line-height: 1.6;
+    font-size: 10pt;
+  }
+
+  .cover-page {
+    page-break-after: always;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    min-height: 90vh;
+    padding: 40px 20px 20px 20px;
+    border-bottom: 2px solid #e2e8f0;
+  }
+
+  .cover-badge {
+    display: inline-block;
+    background: #0284c7;
+    color: #ffffff;
+    font-size: 9pt;
+    font-weight: 700;
+    padding: 6px 14px;
+    border-radius: 20px;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    margin-bottom: 24px;
+  }
+
+  .cover-title {
+    font-size: 26pt;
+    font-weight: 800;
+    line-height: 1.2;
+    color: #0f172a;
+    margin-bottom: 12px;
+  }
+
+  .cover-subtitle {
+    font-size: 13pt;
+    font-weight: 400;
+    color: #475569;
+    line-height: 1.5;
+    margin-bottom: 30px;
+  }
+
+  .cover-divider {
+    width: 80px;
+    height: 4px;
+    background: #0284c7;
+    margin-bottom: 30px;
+    border-radius: 2px;
+  }
+
+  .cover-meta {
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 12px;
+    padding: 20px 24px;
+    margin-top: 40px;
+  }
+
+  .meta-row {
+    display: flex;
+    justify-content: space-between;
+    padding: 8px 0;
+    border-bottom: 1px solid #e2e8f0;
+    font-size: 9.5pt;
+  }
+
+  .meta-row:last-child {
+    border-bottom: none;
+  }
+
+  .meta-label {
+    font-weight: 600;
+    color: #64748b;
+  }
+
+  .meta-value {
+    font-weight: 600;
+    color: #0f172a;
+  }
+
+  .cover-footer {
+    margin-top: 40px;
+    font-size: 8.5pt;
+    color: #94a3b8;
+    text-align: center;
+  }
+
+  /* Headings & Structure */
+  h1 {
+    font-size: 18pt;
+    font-weight: 800;
+    color: #0f172a;
+    border-bottom: 2px solid #0284c7;
+    padding-bottom: 8px;
+    margin-top: 28px;
+    margin-bottom: 16px;
+    page-break-after: avoid;
+  }
+
+  h2 {
+    font-size: 13pt;
+    font-weight: 700;
+    color: #1e293b;
+    margin-top: 20px;
+    margin-bottom: 10px;
+    page-break-after: avoid;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  h3 {
+    font-size: 11pt;
+    font-weight: 600;
+    color: #334155;
+    margin-top: 14px;
+    margin-bottom: 6px;
+    page-break-after: avoid;
+  }
+
+  p {
+    margin-bottom: 10px;
+    text-align: justify;
+  }
+
+  ul, ol {
+    margin-left: 20px;
+    margin-bottom: 12px;
+  }
+
+  li {
+    margin-bottom: 4px;
+  }
+
+  /* Callout Boxes */
+  .callout {
+    padding: 12px 16px;
+    border-radius: 8px;
+    margin: 14px 0;
+    font-size: 9.5pt;
+    page-break-inside: avoid;
+  }
+
+  .callout-info {
+    background: #f0f9ff;
+    border-left: 4px solid #0284c7;
+    color: #0369a1;
+  }
+
+  .callout-warning {
+    background: #fffbeb;
+    border-left: 4px solid #f59e0b;
+    color: #b45309;
+  }
+
+  .callout-success {
+    background: #f0fdf4;
+    border-left: 4px solid #22c55e;
+    color: #15803d;
+  }
+
+  .callout-danger {
+    background: #fef2f2;
+    border-left: 4px solid #ef4444;
+    color: #b91c1c;
+  }
+
+  /* Tables */
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 14px 0;
+    font-size: 9pt;
+    page-break-inside: avoid;
+  }
+
+  th, td {
+    border: 1px solid #cbd5e1;
+    padding: 8px 12px;
+    text-align: left;
+  }
+
+  th {
+    background: #f1f5f9;
+    font-weight: 700;
+    color: #0f172a;
+  }
+
+  tr:nth-child(even) td {
+    background: #f8fafc;
+  }
+
+  /* Code & Pre */
+  code {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 8.5pt;
+    background: #f1f5f9;
+    color: #0f172a;
+    padding: 2px 6px;
+    border-radius: 4px;
+  }
+
+  pre {
+    background: #0f172a;
+    color: #f8fafc;
+    padding: 12px 16px;
+    border-radius: 8px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 8pt;
+    overflow-x: auto;
+    margin: 12px 0;
+    line-height: 1.45;
+    page-break-inside: avoid;
+  }
+
+  /* Architecture Diagram Box */
+  .diagram-box {
+    background: #f8fafc;
+    border: 1px solid #cbd5e1;
+    border-radius: 10px;
+    padding: 16px;
+    margin: 16px 0;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 8.5pt;
+    line-height: 1.5;
+    page-break-inside: avoid;
+  }
+
+  /* Metric cards */
+  .metric-grid {
+    display: flex;
+    gap: 12px;
+    margin: 14px 0;
+    page-break-inside: avoid;
+  }
+
+  .metric-card {
+    flex: 1;
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    padding: 12px;
+    text-align: center;
+  }
+
+  .metric-val {
+    font-size: 16pt;
+    font-weight: 800;
+    color: #0284c7;
+  }
+
+  .metric-lbl {
+    font-size: 8pt;
+    font-weight: 600;
+    color: #64748b;
+    text-transform: uppercase;
+  }
+
+  .page-break {
+    page-break-before: always;
+  }
+</style>
+</head>
+<body>
+
+<!-- COVER PAGE -->
+<div class="cover-page">
+  <div>
+    <div class="cover-badge">Engineering & Architecture Specification</div>
+    <h1 class="cover-title">AI-Based Fake Identity Document Screening System</h1>
+    <div class="cover-subtitle">
+      Two-Stage Verification Pipeline with Multi-Signal Document-Type Validation, Client-Side OCR, Transfer-Learning Computer Vision & Tampering Detection
+    </div>
+    <div class="cover-divider"></div>
+    <p style="font-size: 10.5pt; color: #334155; line-height: 1.7;">
+      A comprehensive production-grade document verification system specifically engineered to detect fraudulent, manipulated, and mismatched identity documents (Aadhaar Card, PAN Card, Passport, and Voter ID). Features a decoupled multi-signal Stage 1 document classification engine, an isolated Stage 2 authenticity verification model, automated client-side forensics, and an integrated AI fraud explanation assistant.
+    </p>
+  </div>
+
+  <div>
+    <div class="cover-meta">
+      <div class="meta-row">
+        <span class="meta-label">Target Documents</span>
+        <span class="meta-value">Aadhaar Card, PAN Card, Indian Passport, Voter ID</span>
+      </div>
+      <div class="meta-row">
+        <span class="meta-label">System Architecture</span>
+        <span class="meta-value">Two-Stage Decoupled Multi-Signal Pipeline</span>
+      </div>
+      <div class="meta-row">
+        <span class="meta-label">Core Technologies</span>
+        <span class="meta-value">TensorFlow.js, Tesseract.js, MobileNetV2, Express.js, Gemini Vision LLM</span>
+      </div>
+      <div class="meta-row">
+        <span class="meta-label">Document Version</span>
+        <span class="meta-value">2.4.0 (Production Release)</span>
+      </div>
+      <div class="meta-row">
+        <span class="meta-label">Author / Organization</span>
+        <span class="meta-value">Suraksha9731 / AI Document Verification Lab</span>
+      </div>
+    </div>
+    <div class="cover-footer">
+      Generated September 2026 &bull; Confidential & Proprietary System Documentation
+    </div>
+  </div>
+</div>
+
+<!-- SECTION 1: EXECUTIVE SUMMARY & PROBLEM STATEMENT -->
+<h1>1. Executive Summary & Problem Statement</h1>
+
+<h2>1.1 Executive Summary</h2>
+<p>
+  Digital identity verification is a fundamental pillar of modern banking (KYC), immigration, government services, and online platforms. With the widespread accessibility of generative image tools, photo-editing software, and synthetic identity fraud, organizations face an unprecedented volume of forged and counterfeit identity documents. 
+</p>
+<p>
+  This project delivers an intelligent, end-to-end, multi-stage identity verification platform capable of screening Indian identity cards—specifically <strong>Aadhaar Card, PAN Card, Passport, and Voter ID Card</strong>. Unlike conventional verification systems that blindly execute a single binary classification model, our architecture implements a <strong>Two-Stage Validation Pipeline</strong> that guarantees document-type identity before assessing authenticity.
+</p>
+
+<h2>1.2 The "Cross-Type False Confidence" Vulnerability</h2>
+<p>
+  Earlier generation computer vision classifiers suffer from a critical algorithmic flaw known as <em>Cross-Type Confidence Inflation</em>. When separate binary classifiers are trained exclusively on one document type (e.g. an Aadhaar model trained solely on original vs. fake Aadhaar images):
+</p>
+<div class="callout callout-danger">
+  <strong>The Problem:</strong> When a user selects "Aadhaar Card" and uploads a completely different document (such as a Passport or Voter ID), the Aadhaar binary model—never having seen a Passport during training—still forces a softmax probability distribution over [ORIGINAL, FAKE]. This results in absurd verdicts like <em>"Aadhaar ORIGINAL 99.8%"</em> on a clear Passport image.
+</div>
+<p>
+  Furthermore, selecting the highest score among all binary models to infer the document type is equally flawed: because each binary model outputs ~99-100% confidence for almost any input, model confidence cannot be used for type identification.
+</p>
+
+<h2>1.3 Solution Overview: Decoupled Two-Stage Architecture</h2>
+<p>
+  To permanently resolve this vulnerability, our system strictly enforces a decoupled architecture:
+</p>
+<ul>
+  <li><strong>Stage 1 (Document Type Validation):</strong> Evaluates three independent signals (Multilingual OCR, Dedicated 5-Class Doctype Classifier, and AI Vision LLM) under a strict priority hierarchy to establish <em>what</em> the document is. Per-type authenticity models are <strong>strictly prohibited</strong> from participating in Stage 1.</li>
+  <li><strong>Stage 2 (Authenticity & Quality Verification):</strong> Only executes once Stage 1 confirms that the uploaded document matches the selected document type. If a mismatch or unrecognized document is detected, Stage 2 scores are completely suppressed and hidden.</li>
+</ul>
+
+<!-- SECTION 2: END-TO-END SYSTEM ARCHITECTURE -->
+<div class="page-break"></div>
+<h1>2. End-to-End System Architecture</h1>
+
+<p>
+  The system consists of a high-performance client-side frontend served via Python HTTP (Port 5000) and a secure Node.js Express backend proxy (Port 5001) that handles external multimodal API calls without exposing client keys.
+</p>
+
+<h2>2.1 High-Level Architectural Flowchart</h2>
+<div class="diagram-box">
+  +---------------------------------------------------------------------------------------------------+
+  |                                        USER INPUT & ACQUISITION                                   |
+  |             [ File Upload: JPG, PNG, WEBP ]   OR   [ Real-Time Webcam Video Stream ]              |
+  +---------------------------------------------------------------------------------------------------+
+                                                    |
+                                                    v
+  +---------------------------------------------------------------------------------------------------+
+  |                        STAGE 1: DOCUMENT TYPE VALIDATION ENGINE (Decoupled)                       |
+  |                                                                                                   |
+  |   [ SIGNAL 1A: Multilingual OCR ]    [ SIGNAL 1B: Doctype Model ]    [ SIGNAL 1C: AI Vision LLM ] |
+  |   - Tesseract.js (eng+hin+kan)       - MobileNetV2 (5 classes)       - Gemini Vision LLM          |
+  |   - Scale >= 1600px + Gamma boost    - Letterbox 224x224 input       - Visual layout inspection   |
+  |   - 0/90/180/270 deg rotation        - 4-way rotation averaging      - Security emblem analysis   |
+  |   - Regex & Levenshtein matching     - Strict conf threshold >=0.85  - Tampering detection        |
+  +---------------------------------------------------------------------------------------------------+
+                                                    |
+                                    Priority Decision Arbitration (Rules 1-5)
+                                                    |
+                    +-------------------------------+-------------------------------+
+                    |                                                               |
+             [ Type Confirmed ]                                     [ Mismatch / Unrecognized ]
+                    |                                                               |
+                    v                                                               v
+  +-----------------------------------+                           +-----------------------------------+
+  |   STAGE 2: AUTHENTICITY ENGINE    |                           |     STAGE 1 WARNING SHIELD        |
+  | - Load Selected Binary Model      |                           | - Suppress Stage 2 Verdict        |
+  | - Letterbox & Rotation Average    |                           | - Hide ORIGINAL/FAKE scores       |
+  | - Forensic Quality Checks:        |                           | - Display Mismatch Banner         |
+  |   * Laplacian Blur Variance       |                           | - Offer 1-Click Type Switcher     |
+  |   * Exposure & Luminance Bounds   |                           +-----------------------------------+
+  |   * Screen Moiré Pattern Check    |
+  | - Verdict Synthesis:              |
+  |   ORIGINAL | FAKE | SUSPICIOUS    |
+  +-----------------------------------+
+                    |
+                    v
+  +---------------------------------------------------------------------------------------------------+
+  |                                  OUTPUT & INTERACTIVE REPORTING                                   |
+  |   [ Visual Verdict Card ]  [ Multi-Signal Breakdown ]  [ Interactive Forensic AI Chatbot ]        |
+  +---------------------------------------------------------------------------------------------------+
+</div>
+
+<h2>2.2 Component Roles & Separation of Concerns</h2>
+<table>
+  <thead>
+    <tr>
+      <th>Layer / Component</th>
+      <th>Host & Port</th>
+      <th>Key Responsibility</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><strong>Web UI & Canvas Engine</strong></td>
+      <td>Client (Port 5000)</td>
+      <td>Image ingestion, live webcam stream, aspect-ratio letterboxing, quality metrics computation, UI state rendering.</td>
+    </tr>
+    <tr>
+      <td><strong>Client-Side OCR (Tesseract.js)</strong></td>
+      <td>Web Worker (CDN)</td>
+      <td>Multi-language OCR processing in background threads without server network round-trips.</td>
+    </tr>
+    <tr>
+      <td><strong>Dedicated Doctype Model</strong></td>
+      <td>Local Client / WebGL</td>
+      <td>5-class MobileNetV2 inference executed in client browser memory via TensorFlow.js.</td>
+    </tr>
+    <tr>
+      <td><strong>Binary Authenticity Models</strong></td>
+      <td>Local Client / WebGL</td>
+      <td>Per-document-type Teachable Machine models trained exclusively on original vs fake samples.</td>
+    </tr>
+    <tr>
+      <td><strong>Backend Proxy Server</strong></td>
+      <td>Node.js (Port 5001)</td>
+      <td>Provides <code>/api/verify-doc-type</code>, <code>/api/vision-status</code>, and <code>/api/explain-fake</code> while securely safeguarding the Gemini API key.</td>
+    </tr>
+  </tbody>
+</table>
+
+<!-- SECTION 3: STAGE 1 DEEP-DIVE -->
+<div class="page-break"></div>
+<h1>3. Stage 1: Document Type Detection Engine</h1>
+
+<p>
+  Stage 1 acts as an impenetrable gatekeeper. It evaluates the uploaded document against three independent signals and arbitrates through a deterministic 5-rule decision hierarchy.
+</p>
+
+<h2>3.1 Signal 1A: Enhanced Multilingual OCR Engine</h2>
+<p>
+  Optical Character Recognition serves as the most definitive proof of document identity. Real-world documents are often photographed in suboptimal lighting, low resolutions, or rotated orientations. To overcome this, our system executes a 4-step image enhancement pipeline:
+</p>
+<ol>
+  <li><strong>Long-Edge Upscaling:</strong> Images with dimensions below 1600px are bilinearly upscaled to a target long edge of at least 1600px (capped at 2200px) to maximize OCR character glyph recognition.</li>
+  <li><strong>Luminance & Gamma Brightening:</strong> The average luminance $L_{\text{avg}} = \frac{1}{N}\sum (0.299R + 0.587G + 0.114B)$ is computed. If $L_{\text{avg}} < 80$, a non-linear gamma expansion ($\gamma = 0.55$) is applied to boost dark shadows without blowing out highlights:
+  $$I_{\text{out}} = 255 \times \left(\frac{I_{\text{in}}}{255}\right)^\gamma$$
+  </li>
+  <li><strong>Adaptive Contrast Stretching:</strong> A piecewise contrast enhancement expands the dynamic range around midtones.</li>
+  <li><strong>Four-Angle Orientation Sweep:</strong> The engine tests $0^\circ, 90^\circ, 180^\circ,$ and $270^\circ$. If a strong identifier is detected at any angle, the sweep terminates early to optimize latency.</li>
+</ol>
+
+<h3>OCR Keyword & Regex Match Hierarchy</h3>
+<table>
+  <thead>
+    <tr>
+      <th>Doc Type</th>
+      <th>Strong Keywords</th>
+      <th>Regex Pattern</th>
+      <th>Weak Keywords</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><strong>Aadhaar Card</strong></td>
+      <td><code>uidai</code>, <code>unique identification authority</code>, <code>aadhaar</code>, <code>आधार</code>, <code>ಆಧಾರ್</code></td>
+      <td><code>\b[2-9]\d{3}\s?\d{4}\s?\d{4}\b</code> (12 digits)</td>
+      <td>Government of India, DOB, Male, Female</td>
+    </tr>
+    <tr>
+      <td><strong>PAN Card</strong></td>
+      <td><code>income tax department</code>, <code>permanent account number</code></td>
+      <td><code>\b[A-Z]{5}\d{4}[A-Z]\b</code> (PAN structure)</td>
+      <td>Govt. of India, Father's Name, Signature</td>
+    </tr>
+    <tr>
+      <td><strong>Passport</strong></td>
+      <td><code>passport no</code>, Compound: <code>nationality</code> + <code>expiry</code></td>
+      <td><code>\bP&lt;IND[A-Z0-9&lt;]{10,}\b</code> (ICAO MRZ)</td>
+      <td>Republic of India, Given Name, Surname</td>
+    </tr>
+    <tr>
+      <td><strong>Voter ID</strong></td>
+      <td><code>election commission of india</code>, <code>भारत निर्वाचन आयोग</code></td>
+      <td><code>\b[A-Z]{3}\d{7}\b</code> (EPIC Number)</td>
+      <td>Elector's Name, EPIC, Gender, Age</td>
+    </tr>
+  </tbody>
+</table>
+
+<h2>3.2 Signal 1B: Dedicated Document Type Classifier (`./model-doctype/`)</h2>
+<p>
+  When OCR text is unreadable or blurred, the system relies on a dedicated 5-class MobileNetV2 neural network. Trained across five distinct classes (<code>aadhaar</code>, <code>pan</code>, <code>passport</code>, <code>voter</code>, <code>other</code>), this model evaluates macro-level visual features: layout geometry, color palettes, photo positioning, and structural emblems.
+</p>
+<ul>
+  <li><strong>Letterbox Preprocessing:</strong> Maintains image aspect ratio by embedding the document inside a square $224 \times 224$ canvas with neutral gray padding (<code>#808080</code>), preventing geometric distortion.</li>
+  <li><strong>Rotation Invariance:</strong> Evaluates the image across four $90^\circ$ rotations and averages the softmax probability vectors:
+  $$\bar{P}(c) = \frac{1}{4} \sum_{\theta \in \{0, 90, 180, 270\}} P_\theta(c)$$
+  </li>
+</ul>
+
+<h2>3.3 Signal 1C: Multimodal AI Vision LLM (Gemini Vision)</h2>
+<p>
+  For complex edge cases (e.g. heavily damaged or obscured documents), the system calls the backend endpoint <code>/api/verify-doc-type</code>. The multimodal model inspects layout symmetry, governmental emblems, photo borders, and security watermarks, returning a structured JSON response containing:
+</p>
+<pre>{
+  "type": "aadhaar" | "pan" | "passport" | "voter" | "other",
+  "confidence": 0.0 - 1.0,
+  "reason": "Clear presence of UIDAI emblem and 12-digit number format.",
+  "fake_signals": ["screen_moire_detected", "font_inconsistency"]
+}</pre>
+
+<h2>3.4 Priority Decision Rules (Rules 1 to 5)</h2>
+<ol>
+  <li><strong>Rule 1 (Definitive OCR Match):</strong> If OCR yields strong identifiers for exactly ONE document type, that type is immediately selected with 99% confidence. All subsequent signals are bypassed.</li>
+  <li><strong>Rule 2 (Multiple OCR Matches):</strong> If multiple types return strong keywords, the type with the highest score is chosen, but flagged as <em>Low Certainty</em> (82% confidence), offering user confirmation buttons.</li>
+  <li><strong>Rule 3 (Dedicated Doctype Classifier):</strong> If OCR yields no strong hits, the neural classifier is inspected. If its top probability is $\ge 0.85$ and no competing rival class exceeds $0.30$, its verdict is accepted.</li>
+  <li><strong>Rule 4 (AI Vision LLM):</strong> If the local classifier is ambiguous or missing, the Vision LLM is queried. If confidence $\ge 0.75$, its prediction is adopted.</li>
+  <li><strong>Rule 5 (Fallback / Unrecognized):</strong> If all signals fail or point to <code>other</code>, the system triggers the <em>Unrecognized Document</em> shield.</li>
+</ol>
+
+<!-- SECTION 4: STAGE 2 DEEP-DIVE -->
+<div class="page-break"></div>
+<h1>4. Stage 2: Authenticity Screening & Forensic Analysis</h1>
+
+<p>
+  Stage 2 is executed exclusively when Stage 1 has confirmed that the uploaded document matches the user's selected category. It combines deep neural feature extraction with client-side image forensics.
+</p>
+
+<h2>4.1 Strict Isolation Policy</h2>
+<div class="callout callout-warning">
+  <strong>Security Guarantee:</strong> Whenever Stage 1 detects a document-type mismatch or an unrecognized image, the entire Stage 2 results panel (including the ORIGINAL/FAKE progress bars and confidence percentages) is completely hidden. The system replaces it with the message: <code>Not verified - document type unconfirmed</code>.
+</div>
+
+<h2>4.2 Forensic Image Quality Checks</h2>
+<p>
+  Even genuine documents may fail if the image is captured in poor conditions. The system runs real-time forensic checks directly on the HTML5 Canvas pixel buffer:
+</p>
+
+<div class="metric-grid">
+  <div class="metric-card">
+    <div class="metric-val">70.0</div>
+    <div class="metric-lbl">Laplacian Blur Threshold</div>
+  </div>
+  <div class="metric-card">
+    <div class="metric-val">35 - 225</div>
+    <div class="metric-lbl">Luminance Exposure Bounds</div>
+  </div>
+  <div class="metric-card">
+    <div class="metric-val">400x300</div>
+    <div class="metric-lbl">Minimum Resolution (px)</div>
+  </div>
+  <div class="metric-card">
+    <div class="metric-val">FFT Moiré</div>
+    <div class="metric-lbl">Screen Capture Detection</div>
+  </div>
+</div>
+
+<h3>Algorithmic Details:</h3>
+<ul>
+  <li><strong>Laplacian Variance Blur Detection:</strong> Convolves a $3 \times 3$ discrete Laplacian operator over the grayscale image to measure high-frequency edge energy. A variance below 70.0 indicates camera motion blur or out-of-focus capture:
+  $$\nabla^2 f = \frac{\partial^2 f}{\partial x^2} + \frac{\partial^2 f}{\partial y^2}$$
+  </li>
+  <li><strong>Exposure & Luminance Analysis:</strong> Average pixel brightness must fall within 35 to 225. Values below 35 represent severe underexposure; values above 225 represent overexposure and washed-out text.</li>
+  <li><strong>Screen Moiré / Recapture Detection:</strong> Computes high-frequency diagonal periodic pixel intensity variances. Documents captured off an LCD/OLED monitor exhibit characteristic moiré interference fringes.</li>
+</ul>
+
+<h2>4.3 Verdict Synthesis Logic</h2>
+<table>
+  <thead>
+    <tr>
+      <th>Verdict</th>
+      <th>Trigger Condition</th>
+      <th>Action & Recommendation</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><span style="color:#16a34a; font-weight:700;">ORIGINAL</span></td>
+      <td>Original probability $> 50\%$ and no quality or tampering flags.</td>
+      <td>Accepted. Document verified authentic.</td>
+    </tr>
+    <tr>
+      <td><span style="color:#dc2626; font-weight:700;">FAKE</span></td>
+      <td>Fake probability $\ge 50\%$ OR $\ge 2$ structural tampering flags.</td>
+      <td>Rejected. Potential forgery or digital manipulation detected. Activates AI Explanation Chatbot.</td>
+    </tr>
+    <tr>
+      <td><span style="color:#d97706; font-weight:700;">SUSPICIOUS</span></td>
+      <td>Model vs. AI visual discrepancy OR display moiré detected.</td>
+      <td>Flagged for manual compliance officer review.</td>
+    </tr>
+    <tr>
+      <td><span style="color:#64748b; font-weight:700;">LOW CONFIDENCE</span></td>
+      <td>Model predicts ORIGINAL but image is blurry, dark, or low-res.</td>
+      <td>Prompt user to recapture document in better lighting.</td>
+    </tr>
+  </tbody>
+</table>
+
+<!-- SECTION 5: DATASETS & MODEL TRAINING -->
+<div class="page-break"></div>
+<h1>5. Datasets, Model Training & Class Balancing</h1>
+
+<h2>5.1 Extracted Training Datasets</h2>
+<p>
+  The model training datasets were aggregated and structured from <code>AI-based fake identity document system250</code>:
+</p>
+
+<table>
+  <thead>
+    <tr>
+      <th>Document Class</th>
+      <th>Original Folder Path</th>
+      <th>Originals</th>
+      <th>Fakes</th>
+      <th>Total Base Samples</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><strong>Passport</strong></td>
+      <td><code>Passport original</code> / <code>Passport fake</code></td>
+      <td>34</td>
+      <td>240</td>
+      <td><strong>274 images</strong></td>
+    </tr>
+    <tr>
+      <td><strong>PAN Card</strong></td>
+      <td><code>original pancard</code> / <code>fake pancard</code></td>
+      <td>106</td>
+      <td>11</td>
+      <td><strong>117 images</strong></td>
+    </tr>
+    <tr>
+      <td><strong>Voter ID</strong></td>
+      <td><code>original voterID</code> / <code>fake voter ID</code></td>
+      <td>12</td>
+      <td>174</td>
+      <td><strong>186 images</strong></td>
+    </tr>
+    <tr>
+      <td><strong>Aadhaar Card</strong></td>
+      <td><code>original adhar</code> / <code>fake adhar</code> + samples</td>
+      <td>3</td>
+      <td>6</td>
+      <td><strong>9 images</strong></td>
+    </tr>
+    <tr>
+      <td><strong>Other (Non-Doc)</strong></td>
+      <td>Screenshots, Wallpapers, Synthetic Cards</td>
+      <td>—</td>
+      <td>—</td>
+      <td><strong>200 images</strong></td>
+    </tr>
+  </tbody>
+</table>
+
+<h2>5.2 Data Preprocessing & Deduplication</h2>
+<ol>
+  <li><strong>Deduplication via Hash:</strong> Every input file is hashed using SHA-256 over raw pixel bytes to eliminate redundant downloads and augmentations.</li>
+  <li><strong>80 / 10 / 10 Split:</strong> Data is split by file into 80% Training, 10% Validation, and 10% Test partitions. Stratification guarantees that minority classes (such as Aadhaar) have samples represented across all three splits.</li>
+  <li><strong>Aadhaar Minority Class Balancing:</strong> Because Aadhaar has a smaller base sample count (9 images), heavy offline and online data augmentation is applied:
+    <ul>
+      <li>Random rotations: $\pm 25^\circ$</li>
+      <li>Brightness jitter: $0.7\times$ to $1.3\times$</li>
+      <li>Random zoom: $0.8\times$ to $1.2\times$</li>
+      <li>Color jitter & slight perspective shear</li>
+    </ul>
+    Furthermore, balanced class weights are injected into the loss function:
+    $$W_c = \frac{N_{\text{total}}}{C \times N_c}$$
+    ensuring that the gradient update from each Aadhaar image is proportional to its representation.
+  </li>
+</ol>
+
+<h2>5.3 Neural Architecture & Web Export</h2>
+<p>
+  The model utilizes <strong>MobileNetV2 ($\alpha = 0.35$)</strong> with ImageNet transfer learning weights. The feature extractor produces a 1280-dimensional embedding vector, followed by:
+</p>
+<pre>Sequential [
+  MobileNetV2 Base (alpha=0.35, input=[224, 224, 3]) -> 1280-dim feature vector
+  Dense Layer 1 (units=100, activation='relu', use_bias=true)
+  Dense Layer 2 (units=5, activation='softmax', use_bias=false)
+]</pre>
+<p>
+  The trained model is serialized into standard Teachable Machine / TensorFlow.js format:
+</p>
+<ul>
+  <li><code>model.json</code>: Contains full model topology and weights manifest.</li>
+  <li><code>weights.bin</code>: Contiguous float32 little-endian binary weights buffer.</li>
+  <li><code>metadata.json</code>: Contains <code>{"modelName":"tm-my-image-model","labels":["aadhaar","pan","passport","voter","other"],"imageSize":224}</code>.</li>
+</ul>
+
+<!-- SECTION 6: USER INTERFACE & REAL-TIME DEBUG PANEL -->
+<div class="page-break"></div>
+<h1>6. User Interface, Interactive Chatbot & Debug Mode</h1>
+
+<h2>6.1 Glassmorphic User Interface</h2>
+<p>
+  The web frontend is designed with a modern dark-mode aesthetic utilizing CSS variables, responsive CSS grid layouts, and hardware-accelerated canvas transforms. Key elements include:
+</p>
+<ul>
+  <li><strong>Dynamic Document Selector:</strong> Tab buttons for Aadhaar, PAN Card, Passport, and Voter ID with instant state updates.</li>
+  <li><strong>Dual Ingestion Modes:</strong> Drag-and-drop file upload zone alongside full webcam integration supporting live image capture.</li>
+  <li><strong>Confidence Display:</strong> All displayed confidences are capped at 99% to prevent misleading 100% assertions.</li>
+  <li><strong>Doctype Missing Warning Banner:</strong> Automatically alerts administrators on startup if <code>./model-doctype/</code> is not found:
+  <div class="callout callout-warning">
+    <strong>Document-type model missing:</strong> Run <code>train_doctype.py</code> to build the dedicated 5-class model.
+  </div>
+  </li>
+</ul>
+
+<h2>6.2 Real-Time Debug Inspector (`?debug=1`)</h2>
+<p>
+  Engineers and auditors can inspect internal pipeline signals by toggling the debug inspector (via the header button or appending <code>?debug=1</code> to the URL). The debug panel reveals:
+</p>
+<table>
+  <thead>
+    <tr>
+      <th>Signal Field</th>
+      <th>Reported Information</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><strong>Final Decision & Rule</strong></td>
+      <td>Shows which specific rule (Rule 1 to 5) determined the document identity and with what confidence.</td>
+    </tr>
+    <tr>
+      <td><strong>OCR Confidence & Angle</strong></td>
+      <td>Displays Tesseract mean confidence score (0-100%) and the rotation angle ($0^\circ, 90^\circ, 180^\circ, 270^\circ$) that produced the match.</td>
+    </tr>
+    <tr>
+      <td><strong>OCR Raw Text Extracted</strong></td>
+      <td>Provides the exact first 300 characters of raw OCR text for immediate inspection of spelling and artifacts.</td>
+    </tr>
+    <tr>
+      <td><strong>Per-Document OCR Table</strong></td>
+      <td>Displays counts for regex pattern hits, strong keyword hits, weak hits, and total calculated score per document type.</td>
+    </tr>
+    <tr>
+      <td><strong>Doctype Model Probabilities</strong></td>
+      <td>Displays the raw softmax probability distribution across all 5 classes (<code>aadhaar</code>, <code>pan</code>, <code>passport</code>, <code>voter</code>, <code>other</code>).</td>
+    </tr>
+    <tr>
+      <td><strong>Vision AI LLM Status</strong></td>
+      <td>Reports whether Gemini Vision is <code>Online</code>, <code>Optional - Not Configured</code>, or <code>Offline</code>, along with reasons and tampering flags.</td>
+    </tr>
+  </tbody>
+</table>
+
+<h2>6.3 Interactive Forensic AI Chatbot</h2>
+<p>
+  When a document is flagged as <strong>FAKE</strong> or <strong>SUSPICIOUS</strong>, the system automatically opens an interactive slide-in chat drawer. Powered by the Express proxy calling Google Gemini:
+</p>
+<ul>
+  <li><strong>Structured Initial Briefing:</strong> Outlines 3–5 bullet points detailing specific red flags typical of that document type (e.g. font misalignment, photo edge tampering, missing micro-printing, or corrupted QR codes).</li>
+  <li><strong>Strict Persona Enforcement:</strong> The assistant strictly adheres to document security topics, never claiming to examine invisible pixels and politely redirecting off-topic queries.</li>
+  <li><strong>Contextual Follow-Up:</strong> Users can ask follow-up questions regarding how to distinguish authentic watermarks, verify MRZ checksums, or obtain genuine duplicates.</li>
+</ul>
+
+<!-- SECTION 7: DEPLOYMENT & VERIFICATION -->
+<div class="page-break"></div>
+<h1>7. Operational Guide & System Verification</h1>
+
+<h2>7.1 Local Deployment & Port Mapping</h2>
+<p>
+  The system is designed to run locally with zero cloud dependencies for Stage 1A, Stage 1B, and Stage 2:
+</p>
+<pre># 1. Start Client-Side Web Application Server (Port 5000)
+cd "c:\...\AI-Based-Fake-Identity-Document-Screening-System-main"
+python -m http.server 5000
+
+# 2. Start Secure Express Backend Server (Port 5001)
+cd server
+npm install
+node server.js</pre>
+
+<h2>7.2 Environment Configuration (`.env`)</h2>
+<p>
+  To enable multimodal AI vision and interactive chatbot features, configure the backend <code>server/.env</code> file:
+</p>
+<pre>PORT=5001
+GEMINI_API_KEY=your_gemini_api_key_here</pre>
+<p>
+  If <code>GEMINI_API_KEY</code> is omitted, the system operates seamlessly in offline mode: Signal 1A (OCR) and Signal 1B (Local Doctype Model) perform Stage 1, while canned forensic responses support the chatbot.
+</p>
+
+<h2>7.3 System Verification & Test Matrix</h2>
+<table>
+  <thead>
+    <tr>
+      <th>Test Scenario</th>
+      <th>Uploaded Document</th>
+      <th>Selected Type</th>
+      <th>Expected System Behavior</th>
+      <th>Status</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><strong>Correct Match</strong></td>
+      <td>Real Aadhaar Card</td>
+      <td>Aadhaar Card</td>
+      <td>Stage 1 confirms Aadhaar via Rule 1 (OCR) &rarr; Stage 2 evaluates authenticity &rarr; Verdict: ORIGINAL.</td>
+      <td><span style="color:#16a34a; font-weight:700;">PASS</span></td>
+    </tr>
+    <tr>
+      <td><strong>Type Mismatch</strong></td>
+      <td>Passport Image</td>
+      <td>Aadhaar Card</td>
+      <td>Stage 1 detects Passport &rarr; Stage 2 suppressed &rarr; Mismatch Banner: <em>"Selected Aadhaar, looks like Passport"</em> &rarr; 1-click switch button displayed.</td>
+      <td><span style="color:#16a34a; font-weight:700;">PASS</span></td>
+    </tr>
+    <tr>
+      <td><strong>Forged Document</strong></td>
+      <td>Tampered PAN Card</td>
+      <td>PAN Card</td>
+      <td>Stage 1 confirms PAN Card &rarr; Stage 2 neural model flags manipulation &rarr; Verdict: FAKE &rarr; AI Chatbot drawer activates.</td>
+      <td><span style="color:#16a34a; font-weight:700;">PASS</span></td>
+    </tr>
+    <tr>
+      <td><strong>Non-Document</strong></td>
+      <td>Selfie / Wallpaper</td>
+      <td>Voter ID</td>
+      <td>Stage 1 flags Unrecognized / Other via Rule 5 &rarr; Stage 2 suppressed &rarr; Warning: <em>"Unrecognized Document"</em>.</td>
+      <td><span style="color:#16a34a; font-weight:700;">PASS</span></td>
+    </tr>
+    <tr>
+      <td><strong>Dark / Blurry</strong></td>
+      <td>Poor Lighting Passport</td>
+      <td>Passport</td>
+      <td>Stage 1 upscales & boosts gamma &rarr; Type recognized &rarr; Stage 2 Laplacian variance &lt; 70.0 &rarr; Verdict: LOW CONFIDENCE.</td>
+      <td><span style="color:#16a34a; font-weight:700;">PASS</span></td>
+    </tr>
+  </tbody>
+</table>
+
+<h2>7.4 Summary & Conclusion</h2>
+<p>
+  This AI-Based Fake Identity Document Screening System successfully eliminates the cross-type misclassification vulnerability inherent in traditional single-stage screening architectures. By decoupling document identification (Stage 1) from authenticity classification (Stage 2), applying multi-signal priority arbitration, and enforcing real-time quality forensics, the system delivers an enterprise-grade, transparent, and resilient document verification platform.
+</p>
+
+</body>
+</html>

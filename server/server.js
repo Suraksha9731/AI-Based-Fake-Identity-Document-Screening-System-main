@@ -10,6 +10,17 @@ app.use(cors());
 app.use(express.json({ limit: '25mb' }));
 app.use(express.urlencoded({ extended: true, limit: '25mb' }));
 
+// Health check endpoint for Vision LLM status
+app.get('/api/vision-status', (req, res) => {
+    const apiKey = process.env.GEMINI_API_KEY;
+    const isConfigured = !!apiKey && apiKey !== "YOUR_GEMINI_API_KEY_HERE" && apiKey.trim().length > 10;
+    res.json({
+        configured: isConfigured,
+        status: isConfigured ? "online" : "optional_not_configured",
+        message: isConfigured ? "Gemini Vision LLM is active" : "Gemini API key not configured (Optional)"
+    });
+});
+
 // Strict Persona & System Instruction
 const SYSTEM_INSTRUCTION = `You are a document verification assistant. You explain, in simple and professional language, common visual and structural signs that make identity documents (such as Aadhaar cards, PAN cards, or Passports) look fake, based only on the document type and classification confidence provided. Never claim to have examined specific pixels or details you were not given. Stay strictly on-topic: document authenticity, security features (e.g. laminate/photo page integrity, MRZ checksums, watermarks, font alignment), and verification tips. If asked something unrelated, politely redirect to the topic of document verification.`;
 

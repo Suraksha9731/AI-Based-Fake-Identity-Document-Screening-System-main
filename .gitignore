@@ -4,6 +4,17 @@ Thumbs.db
 *.log
 *.tmp
 
+# Environment variables & secrets
+.env
+server/.env
+*.env
+
+# Python cache & binaries
+__pycache__/
+*.py[cod]
+*$py.class
+cloudflared*
+
 # Dependency directories if added later
 node_modules/
 dist/

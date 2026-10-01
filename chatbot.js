@@ -3,7 +3,10 @@
  * Activated ONLY when a document is classified as "FAKE"
  */
 
-const BACKEND_API_URL = "http://localhost:5001/api/explain-fake";
+function getBackendApiUrl() {
+    const base = localStorage.getItem("backend_api_url") || "http://localhost:5001";
+    return base.trim().replace(/\/+$/, "") + "/api/explain-fake";
+}
 
 // Chat State
 let activeDocType = "Identity Document";
@@ -79,7 +82,8 @@ async function requestFakeExplanation() {
     isWaitingForAI = true;
 
     try {
-        const response = await fetch(BACKEND_API_URL, {
+        const targetUrl = getBackendApiUrl();
+        const response = await fetch(targetUrl, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
@@ -110,9 +114,10 @@ async function requestFakeExplanation() {
     } catch (err) {
         console.error("Chatbot Fetch Error:", err);
         removeLoadingBubble(loadingId);
+        const targetUrl = getBackendApiUrl();
         appendErrorMessage(
-            `Unable to connect to the backend server at <code>${BACKEND_API_URL}</code>. ` +
-            `Please ensure the server is running by opening terminal and running: <code>cd server && npm start</code>`
+            `Unable to connect to the backend server at <code>${targetUrl}</code>. ` +
+            `Please ensure your Colab notebook or local server is running and accessible.`
         );
         if (explainTriggerBtn) explainTriggerBtn.disabled = false;
     } finally {
@@ -141,7 +146,8 @@ async function sendUserChatMessage() {
     isWaitingForAI = true;
 
     try {
-        const response = await fetch(BACKEND_API_URL, {
+        const targetUrl = getBackendApiUrl();
+        const response = await fetch(targetUrl, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({

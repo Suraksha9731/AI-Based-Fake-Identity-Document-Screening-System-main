@@ -1,8 +1,24 @@
 /**
- * Authentication Logic & Session Management (Local/Demo Version)
+ * Authentication Logic & Session Management
+ * Supports both Google Colab / Remote Flask Backend and Local/Demo Fallback
  */
 
-// Initialize Demo User in LocalStorage if no users exist
+// Global state for backend connectivity
+let isBackendOnline = false;
+
+function getBackendUrl() {
+    let url = localStorage.getItem("backend_api_url") || "http://localhost:5001";
+    return url.trim().replace(/\/+$/, "");
+}
+
+function setBackendUrl(url) {
+    let cleaned = (url || "").trim().replace(/\/+$/, "");
+    if (!cleaned) cleaned = "http://localhost:5001";
+    localStorage.setItem("backend_api_url", cleaned);
+    return cleaned;
+}
+
+// Initialize Demo User in LocalStorage & verify backend on load
 document.addEventListener("DOMContentLoaded", () => {
     // Session Guard: If already logged in, redirect directly to main app
     if (sessionStorage.getItem("isLoggedIn") === "true") {
@@ -16,11 +32,20 @@ document.addEventListener("DOMContentLoaded", () => {
             {
                 name: "Demo Admin",
                 email: "admin@example.com",
-                password: "password123" // Note: Plaintext demo for local prototype. In production, password hash is used.
+                password: "password123" // Note: Plaintext demo for local prototype.
             }
         ];
         localStorage.setItem("app_users", JSON.stringify(initialUsers));
     }
+
+    // Populate backend URL input field
+    const serverInput = document.getElementById("server-url-input");
+    if (serverInput) {
+        serverInput.value = getBackendUrl();
+    }
+
+    // Run background check to verify Colab / Local server
+    checkBackendHealth(false);
 });
 
 /* ==========================================================================
@@ -60,7 +85,7 @@ function togglePasswordVisibility(inputId, btnEl) {
 }
 
 /* ==========================================================================
-   2. Login Handler
+   2. Login Handler (Colab Backend with Local Fallback)
    ========================================================================== */
 async function handleLogin(e) {
     e.preventDefault();
@@ -75,32 +100,48 @@ async function handleLogin(e) {
         return;
     }
 
-    /* 
-     * ========================================================================
-     * BACKEND INTEGRATION PLACEHOLDER:
-     * To replace this local authentication check with a real backend API server:
-     * 
-     * try {
-     *     const response = await fetch('/api/v1/auth/login', {
-     *         method: 'POST',
-     *         headers: { 'Content-Type': 'application/json' },
-     *         body: JSON.stringify({ email: emailInput, password: passwordInput })
-     *     });
-     *     const data = await response.json();
-     *     if (response.ok) {
-     *         sessionStorage.setItem("authToken", data.token);
-     *         sessionStorage.setItem("isLoggedIn", "true");
-     *         window.location.href = "index.html";
-     *     } else {
-     *         showAlert("error", data.message || "Invalid credentials.");
-     *     }
-     * } catch (err) {
-     *     showAlert("error", "Network error connecting to authentication server.");
-     * }
-     * ========================================================================
-     */
+    const backendUrl = getBackendUrl();
+    let backendAttemptFailed = false;
 
-    // LOCAL STORAGE DEMO AUTH CHECK
+    // 1. ATTEMPT COLAB / FLASK BACKEND AUTHENTICATION
+    try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 4000);
+
+        const response = await fetch(`${backendUrl}/api/auth/login`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email: emailInput, password: passwordInput }),
+            signal: controller.signal
+        });
+        clearTimeout(timeoutId);
+
+        const data = await response.json();
+
+        if (response.ok && data.success) {
+            sessionStorage.setItem("authToken", data.token || "colab_session_token");
+            sessionStorage.setItem("isLoggedIn", "true");
+            sessionStorage.setItem("currentUser", data.user?.name || emailInput);
+            sessionStorage.setItem("currentUserEmail", data.user?.email || emailInput);
+
+            const isColab = backendUrl.includes("trycloudflare.com") || backendUrl.includes("ngrok");
+            const serverTag = isColab ? "Colab Server" : "Backend Server";
+            showAlert("success", `Login successful via ${serverTag}! Redirecting...`);
+
+            setTimeout(() => {
+                window.location.href = "index.html";
+            }, 600);
+            return;
+        } else if (response.status === 401) {
+            showAlert("error", data.message || "Invalid credentials provided.");
+            return;
+        }
+    } catch (err) {
+        console.warn("Backend auth call unavailable, switching to local demo mode:", err);
+        backendAttemptFailed = true;
+    }
+
+    // 2. LOCAL STORAGE / DEMO FALLBACK (Guarantees user is never locked out)
     const users = JSON.parse(localStorage.getItem("app_users") || "[]");
     const matchedUser = users.find(
         user => (user.email.toLowerCase() === emailInput.toLowerCase() || user.name.toLowerCase() === emailInput.toLowerCase()) &&
@@ -108,12 +149,14 @@ async function handleLogin(e) {
     );
 
     if (matchedUser) {
-        // Save session flag & current user info in sessionStorage
         sessionStorage.setItem("isLoggedIn", "true");
         sessionStorage.setItem("currentUser", matchedUser.name || matchedUser.email);
         sessionStorage.setItem("currentUserEmail", matchedUser.email);
 
-        showAlert("success", "Login successful! Redirecting to verification portal...");
+        const msg = backendAttemptFailed
+            ? "Login successful (Demo Mode - Backend Offline). Redirecting..."
+            : "Login successful! Redirecting to verification portal...";
+        showAlert("success", msg);
 
         setTimeout(() => {
             window.location.href = "index.html";
@@ -156,19 +199,48 @@ async function handleRegister(e) {
         return;
     }
 
-    /* 
-     * ========================================================================
-     * BACKEND INTEGRATION PLACEHOLDER:
-     * To replace local registration with a backend API call:
-     * 
-     * const response = await fetch('/api/v1/auth/register', {
-     *     method: 'POST',
-     *     headers: { 'Content-Type': 'application/json' },
-     *     body: JSON.stringify({ name, email, password })
-     * });
-     * ========================================================================
-     */
+    const backendUrl = getBackendUrl();
 
+    // 1. ATTEMPT COLAB / BACKEND REGISTRATION
+    try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 4000);
+
+        const response = await fetch(`${backendUrl}/api/auth/register`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name, email, password }),
+            signal: controller.signal
+        });
+        clearTimeout(timeoutId);
+
+        const data = await response.json();
+        if (response.ok && data.success) {
+            // Also store locally for offline access
+            const users = JSON.parse(localStorage.getItem("app_users") || "[]");
+            if (!users.find(u => u.email.toLowerCase() === email.toLowerCase())) {
+                users.push({ name, email, password });
+                localStorage.setItem("app_users", JSON.stringify(users));
+            }
+
+            sessionStorage.setItem("isLoggedIn", "true");
+            sessionStorage.setItem("currentUser", name);
+            sessionStorage.setItem("currentUserEmail", email);
+            showAlert("success", "Account created on Backend! Auto-logging you in...");
+
+            setTimeout(() => {
+                window.location.href = "index.html";
+            }, 800);
+            return;
+        } else if (response.status === 409) {
+            showAlert("error", data.message || "An account with this email address already exists.");
+            return;
+        }
+    } catch (err) {
+        console.warn("Backend registration endpoint unavailable, using local storage:", err);
+    }
+
+    // 2. LOCAL STORAGE REGISTRATION FALLBACK
     const users = JSON.parse(localStorage.getItem("app_users") || "[]");
     
     // Check if email already registered
@@ -182,7 +254,7 @@ async function handleRegister(e) {
     users.push({ name, email, password });
     localStorage.setItem("app_users", JSON.stringify(users));
 
-    showAlert("success", "Account created successfully! Auto-logging you in...");
+    showAlert("success", "Account created locally! Auto-logging you in...");
 
     // Auto log in newly registered user
     sessionStorage.setItem("isLoggedIn", "true");
@@ -192,6 +264,86 @@ async function handleRegister(e) {
     setTimeout(() => {
         window.location.href = "index.html";
     }, 1000);
+}
+
+/* ==========================================================================
+   4. Backend Bridge & Tunnel Controls
+   ========================================================================== */
+async function checkBackendHealth(showFeedback = false) {
+    const url = getBackendUrl();
+    const statusDot = document.getElementById("server-status-dot");
+    const statusText = document.getElementById("server-status-text");
+
+    if (statusDot) statusDot.className = "status-dot checking";
+    if (statusText) statusText.textContent = "Connecting to backend...";
+
+    try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 4000);
+
+        const resp = await fetch(`${url}/api/vision-status`, { signal: controller.signal });
+        clearTimeout(timeoutId);
+
+        if (resp.ok) {
+            const data = await resp.json();
+            isBackendOnline = true;
+            if (statusDot) statusDot.className = "status-dot online";
+            
+            const isColab = data.colab || url.includes("trycloudflare.com") || url.includes("ngrok");
+            const serverName = isColab ? "Colab Backend" : "Local Backend (5001)";
+            const cleanHost = url.replace(/^https?:\/\//, '').split('/')[0];
+            
+            if (statusText) statusText.textContent = `${serverName} Online (${cleanHost})`;
+            if (showFeedback) showAlert("success", `Connected to ${serverName}! (${url})`);
+            return true;
+        } else {
+            throw new Error(`HTTP ${resp.status}`);
+        }
+    } catch (err) {
+        isBackendOnline = false;
+        if (statusDot) statusDot.className = "status-dot offline";
+        if (statusText) statusText.textContent = "Backend Offline (Demo Mode Available)";
+        if (showFeedback) showAlert("error", `Could not connect to backend at ${url}. Operating in local demo mode.`);
+        return false;
+    }
+}
+
+function toggleBackendSettings() {
+    const body = document.getElementById("bridge-settings");
+    const chevron = document.getElementById("bridge-chevron");
+    if (!body) return;
+    const isHidden = body.style.display === "none";
+    body.style.display = isHidden ? "block" : "none";
+    if (chevron) {
+        chevron.className = isHidden ? "fa-solid fa-chevron-up" : "fa-solid fa-chevron-down";
+    }
+}
+
+function setServerPreset(type) {
+    const input = document.getElementById("server-url-input");
+    if (!input) return;
+    if (type === "local") {
+        input.value = "http://localhost:5001";
+    } else if (type === "colab") {
+        const current = getBackendUrl();
+        if (current.includes("localhost") || !current) {
+            input.value = "";
+            input.placeholder = "Paste your Colab tunnel URL (e.g. https://...trycloudflare.com)";
+            input.focus();
+        } else {
+            input.value = current;
+        }
+    }
+}
+
+async function testAndSaveServerUrl() {
+    const input = document.getElementById("server-url-input");
+    if (!input || !input.value.trim()) {
+        showAlert("error", "Please enter a valid backend URL or tunnel link.");
+        return;
+    }
+    const newUrl = setBackendUrl(input.value.trim());
+    await checkBackendHealth(true);
 }
 
 /* ==========================================================================

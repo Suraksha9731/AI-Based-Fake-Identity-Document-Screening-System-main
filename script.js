@@ -22,7 +22,17 @@ const LOW_RES_WIDTH_THRESHOLD = 400;          // Min width in px
 const LOW_RES_HEIGHT_THRESHOLD = 300;         // Min height in px
 const BRIGHTNESS_MIN = 35;                    // Extreme darkness threshold
 const BRIGHTNESS_MAX = 225;                   // Extreme brightness threshold
-const BACKEND_VISION_URL = "http://localhost:5001/api/verify-doc-type";
+
+function getBackendUrl() {
+    let url = localStorage.getItem("backend_api_url") || "http://localhost:5001";
+    return url.trim().replace(/\/+$/, "");
+}
+function getBackendVisionUrl() {
+    return `${getBackendUrl()}/api/verify-doc-type`;
+}
+function getBackendStatusUrl() {
+    return `${getBackendUrl()}/api/vision-status`;
+}
 
 // Debug mode toggle (?debug=1 in query string)
 const urlParams = new URLSearchParams(window.location.search);
@@ -113,6 +123,10 @@ let livePredictAnimationFrame = null;
 // DOM Elements
 const modelStatusPill = document.getElementById("model-status");
 const modelStatusText = document.getElementById("model-status-text");
+const doctypeMissingBanner = document.getElementById("doctype-missing-banner");
+const stage2SignalsPanel = document.getElementById("stage2-signals-panel");
+
+let visionApiStatus = "checking"; // "online", "optional_not_configured", "offline"
 
 const docResultBanner = document.getElementById("doc-result-banner");
 const docResultIcon = document.getElementById("doc-result-icon");
@@ -260,13 +274,18 @@ async function preloadAllModels() {
             throw new Error("Teachable Machine library not loaded. Check CDN script tags.");
         }
 
+        // Check backend vision health / configuration
+        checkBackendVisionStatus();
+
         // Try preloading Stage 1B Dedicated Document Type Classifier (./model-doctype/)
         try {
             doctypeClassifierModel = await tmImage.load("./model-doctype/model.json", "./model-doctype/metadata.json");
             console.log("[STAGE 1B] Dedicated document type classifier loaded successfully.");
+            if (doctypeMissingBanner) doctypeMissingBanner.style.display = "none";
         } catch (_) {
             doctypeClassifierModel = null;
             console.log("[STAGE 1B] ./model-doctype not found or not yet trained. Will use OCR (1A) + AI Vision (1C).");
+            if (doctypeMissingBanner) doctypeMissingBanner.style.display = "flex";
         }
 
         // Preload Stage 2 Authenticity Models (for Stage 2 execution only)
@@ -278,6 +297,67 @@ async function preloadAllModels() {
         console.error("Error preloading models:", err);
         updateModelStatus("error", "Model Load Failed");
         showError("Failed to load document models. Please ensure you are serving via HTTP (e.g. python -m http.server 5000).");
+    }
+}
+
+async function checkBackendVisionStatus() {
+    try {
+        const resp = await fetch(getBackendStatusUrl());
+        if (resp.ok) {
+            const data = await resp.json();
+            visionApiStatus = data.status; // "online" or "optional_not_configured"
+            updateBackendStatusBadge(true, data.colab);
+        } else {
+            visionApiStatus = "offline";
+            updateBackendStatusBadge(false);
+        }
+    } catch (_) {
+        visionApiStatus = "offline";
+        updateBackendStatusBadge(false);
+    }
+    updateSignal1CVisionStatusPill();
+}
+
+function updateBackendStatusBadge(isOnline, isColab) {
+    const badge = document.getElementById("backend-status-badge");
+    const text = document.getElementById("backend-status-text");
+    const dot = document.getElementById("header-backend-dot");
+    if (!badge || !text) return;
+
+    const url = getBackendUrl();
+    const isColabUrl = isColab || url.includes("trycloudflare.com") || url.includes("ngrok");
+
+    if (isOnline) {
+        badge.className = "model-status-badge status-ready";
+        if (dot) dot.style.backgroundColor = "#10b981";
+        text.textContent = isColabUrl ? "Colab Server (Online)" : "Local Server (5001)";
+    } else {
+        badge.className = "model-status-badge status-error";
+        if (dot) dot.style.backgroundColor = "#ef4444";
+        text.textContent = "Backend Offline";
+    }
+}
+
+function promptBackendUrl() {
+    const current = getBackendUrl();
+    const newUrl = prompt("Enter your Google Colab Backend URL (e.g. https://...trycloudflare.com) or Local Server URL:", current);
+    if (newUrl !== null && newUrl.trim() !== "") {
+        localStorage.setItem("backend_api_url", newUrl.trim().replace(/\/+$/, ""));
+        checkBackendVisionStatus();
+    }
+}
+
+function updateSignal1CVisionStatusPill() {
+    if (!signalVisionVal) return;
+    if (visionApiStatus === "optional_not_configured") {
+        signalVisionVal.textContent = "Optional - Not Configured";
+        signalVisionSub.textContent = "Add GEMINI_API_KEY in server/.env";
+    } else if (visionApiStatus === "online") {
+        signalVisionVal.textContent = "Standing by (Online)";
+        signalVisionSub.textContent = "Gemini Vision LLM";
+    } else if (visionApiStatus === "offline") {
+        signalVisionVal.textContent = "Offline";
+        signalVisionSub.textContent = "Server uncontactable";
     }
 }
 
@@ -533,38 +613,72 @@ async function predictWithRotations(model, imageElement) {
 }
 
 /**
- * Prepares image for OCR: upscales small images 2x, applies grayscale & contrast enhancement
+ * TASK 4: Prepares image for OCR
+ * - Upscales small images so long edge >= 1600px
+ * - Rotation support (0, 90, 180, 270 degrees)
+ * - Grayscale, gamma brightening for dark/low-light photos, and contrast stretch
  */
-function prepareOcrCanvas(imageElement) {
+function prepareOcrCanvas(imageElement, rotation = 0) {
     const origW = imageElement.naturalWidth || imageElement.videoWidth || imageElement.width || 640;
     const origH = imageElement.naturalHeight || imageElement.videoHeight || imageElement.height || 480;
 
-    let scale = 1.0;
-    if (origW < 800 || origH < 800) {
-        scale = 2.0; // Upscale small images 2x for OCR
-    } else if (origW > 1600 || origH > 1600) {
-        scale = 1600 / Math.max(origW, origH);
-    }
+    const longEdge = Math.max(origW, origH);
+    // Upscale to >= 1600px long edge (capped at 2200px for speed and memory safety)
+    let targetLong = Math.max(1600, longEdge);
+    if (targetLong > 2200) targetLong = 2200;
+    const scale = targetLong / longEdge;
 
     const w = Math.round(origW * scale);
     const h = Math.round(origH * scale);
 
     const canvas = document.createElement("canvas");
-    canvas.width = w;
-    canvas.height = h;
+    if (rotation === 90 || rotation === 270) {
+        canvas.width = h;
+        canvas.height = w;
+    } else {
+        canvas.width = w;
+        canvas.height = h;
+    }
     const ctx = canvas.getContext("2d");
 
+    ctx.save();
+    if (rotation === 90) {
+        ctx.translate(h, 0);
+        ctx.rotate(Math.PI / 2);
+    } else if (rotation === 180) {
+        ctx.translate(w, h);
+        ctx.rotate(Math.PI);
+    } else if (rotation === 270) {
+        ctx.translate(0, w);
+        ctx.rotate((3 * Math.PI) / 2);
+    }
     ctx.drawImage(imageElement, 0, 0, w, h);
+    ctx.restore();
 
-    // Grayscale + Contrast Stretch
-    const imgData = ctx.getImageData(0, 0, w, h);
+    // Grayscale, adaptive gamma brightening & contrast stretch
+    const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
     const d = imgData.data;
+
+    // Check average luminance to detect dark or underexposed photos
+    let sumLum = 0;
+    const pixelCount = d.length / 4;
     for (let i = 0; i < d.length; i += 4) {
-        const gray = 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
-        const contrast = gray > 128 ? Math.min(255, (gray - 128) * 1.45 + 128) : Math.max(0, 128 - (128 - gray) * 1.45);
-        d[i] = contrast;
-        d[i + 1] = contrast;
-        d[i + 2] = contrast;
+        sumLum += 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
+    }
+    const avgLum = sumLum / pixelCount;
+    // Gamma brightening: if dark (< 110), boost shadows
+    const gamma = avgLum < 80 ? 0.55 : (avgLum < 115 ? 0.72 : 1.0);
+
+    for (let i = 0; i < d.length; i += 4) {
+        let gray = 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
+        if (gamma !== 1.0) {
+            gray = 255 * Math.pow(gray / 255, gamma);
+        }
+        // Adaptive contrast stretch
+        const enhanced = gray > 128 ? Math.min(255, (gray - 128) * 1.5 + 128) : Math.max(0, 128 - (128 - gray) * 1.5);
+        d[i] = enhanced;
+        d[i + 1] = enhanced;
+        d[i + 2] = enhanced;
     }
     ctx.putImageData(imgData, 0, 0);
 
@@ -789,34 +903,60 @@ function evaluateOcrTextStrict(rawText) {
 async function runStage1AOcr(imageElement) {
     if (typeof Tesseract === "undefined") {
         console.warn("[STAGE 1A] Tesseract.js is not loaded.");
-        return { available: false, strongTypes: [], scores: {}, reason: "OCR library not loaded" };
+        return { available: false, strongTypes: [], scores: {}, reason: "OCR library not loaded", rawText: "", ocrConfidence: 0, rotationUsed: 0 };
     }
 
-    try {
-        const ocrCanvas = prepareOcrCanvas(imageElement);
+    // TASK 4: Try 0, 90, 180, 270 rotations; exit early as soon as strong hit is found
+    const rotations = [0, 90, 180, 270];
+    let bestEval = { strongTypes: [], scores: {}, rawText: "", ocrConfidence: 0, rotationUsed: 0 };
 
-        // Load multilingual models: eng+hin+kan, with fallback to eng+hin then eng
-        let ocrResult = null;
+    for (const rot of rotations) {
         try {
-            ocrResult = await Tesseract.recognize(ocrCanvas, 'eng+hin+kan');
-        } catch (langErr) {
-            console.warn("Falling back to eng+hin OCR:", langErr.message);
-            try {
-                ocrResult = await Tesseract.recognize(ocrCanvas, 'eng+hin');
-            } catch (_) {
-                ocrResult = await Tesseract.recognize(ocrCanvas, 'eng');
-            }
-        }
+            const ocrCanvas = prepareOcrCanvas(imageElement, rot);
 
-        const evalData = evaluateOcrTextStrict(ocrResult?.data?.text || "");
-        return {
-            available: true,
-            ...evalData
-        };
-    } catch (err) {
-        console.warn("[STAGE 1A] OCR error:", err);
-        return { available: false, strongTypes: [], scores: {}, reason: err.message };
+            // Multilingual OCR: eng+hin+kan, with fallback to eng+hin then eng
+            let ocrResult = null;
+            try {
+                ocrResult = await Tesseract.recognize(ocrCanvas, 'eng+hin+kan');
+            } catch (langErr) {
+                console.warn("Falling back to eng+hin OCR:", langErr.message);
+                try {
+                    ocrResult = await Tesseract.recognize(ocrCanvas, 'eng+hin');
+                } catch (_) {
+                    ocrResult = await Tesseract.recognize(ocrCanvas, 'eng');
+                }
+            }
+
+            const rawText = ocrResult?.data?.text || "";
+            const ocrConfidence = Math.round(ocrResult?.data?.confidence || 0);
+            const evalData = evaluateOcrTextStrict(rawText);
+
+            if (evalData.strongTypes.length > 0) {
+                // Definitive hit found on rotation `rot`
+                return {
+                    available: true,
+                    ...evalData,
+                    ocrConfidence,
+                    rotationUsed: rot
+                };
+            }
+
+            if (rawText.length > bestEval.rawText.length) {
+                bestEval = {
+                    ...evalData,
+                    ocrConfidence,
+                    rotationUsed: rot
+                };
+            }
+        } catch (err) {
+            console.warn(`[STAGE 1A] OCR error at rotation ${rot}°:`, err);
+        }
     }
+
+    return {
+        available: true,
+        ...bestEval
+    };
 }
 
 // ==========================================================================
@@ -874,7 +1014,7 @@ async function runStage1CVision(imageElement) {
         ctx.drawImage(imageElement, 0, 0, w, h);
         const base64Data = canvas.toDataURL("image/jpeg", 0.85);
 
-        const response = await fetch(BACKEND_VISION_URL, {
+        const response = await fetch(getBackendVisionUrl(), {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ image: base64Data })
@@ -1210,8 +1350,16 @@ function renderSignal1CUI(s1C) {
         signalVisionSub.textContent = s1C.fake_signals.length > 0 ? `${s1C.fake_signals.length} Flags` : "Clean Layout";
         document.getElementById("signal-vision-card")?.classList.add("hit-agree");
     } else {
-        signalVisionVal.textContent = s1C.reason && s1C.reason.includes("Skipped") ? "Skipped (Consensus)" : "Offline";
-        signalVisionSub.textContent = "Gemini Vision LLM";
+        if (s1C.reason && s1C.reason.includes("Skipped")) {
+            signalVisionVal.textContent = "Skipped (Consensus)";
+            signalVisionSub.textContent = "Gemini Vision LLM";
+        } else if (visionApiStatus === "optional_not_configured") {
+            signalVisionVal.textContent = "Optional - Not Configured";
+            signalVisionSub.textContent = "Add GEMINI_API_KEY in server/.env";
+        } else {
+            signalVisionVal.textContent = "Offline";
+            signalVisionSub.textContent = "Server uncontactable";
+        }
         document.getElementById("signal-vision-card")?.classList.add("hit-neutral");
     }
 }
@@ -1222,6 +1370,8 @@ function showMismatchCard(stage1, durationMs) {
     resultsContent.style.display = 'block';
 
     verdictCard.style.display = 'none';
+    // TASK 2: Hide Stage 2 authenticity signals when Stage 1 fails
+    if (stage2SignalsPanel) stage2SignalsPanel.style.display = 'none';
     if (breakdownSection) breakdownSection.style.display = 'block';
     if (typeof hideChatbotPanel === "function") hideChatbotPanel();
 
@@ -1279,6 +1429,8 @@ function showUnrecognizedCard(stage1, durationMs) {
     resultsContent.style.display = 'block';
 
     verdictCard.style.display = 'none';
+    // TASK 2: Hide Stage 2 authenticity signals when Stage 1 fails
+    if (stage2SignalsPanel) stage2SignalsPanel.style.display = 'none';
     if (breakdownSection) breakdownSection.style.display = 'block';
     if (typeof hideChatbotPanel === "function") hideChatbotPanel();
 
@@ -1309,6 +1461,7 @@ function displayStage2Results(stage1, stage2, durationMs) {
 
     if (doctypeWarningCard) doctypeWarningCard.style.display = 'none';
     verdictCard.style.display = 'flex';
+    if (stage2SignalsPanel) stage2SignalsPanel.style.display = 'block';
     if (breakdownSection) breakdownSection.style.display = 'block';
 
     if (durationMs > 0) {
@@ -1454,7 +1607,12 @@ function renderDebugPanel(stage1) {
 
     // OCR Raw Text block (first 300 chars)
     const rawOcrSnippet = stage1.ocrResult.rawText ? stage1.ocrResult.rawText.substring(0, 300) : "No text extracted";
-    html += `<div><strong>OCR Raw Text (first 300 chars):</strong>
+    html += `<div>
+        <div style="margin-bottom: 0.35rem;">
+            <strong>OCR Engine:</strong> Confidence: <span style="color: #4ade80;">${stage1.ocrResult.ocrConfidence || 0}%</span> | 
+            Orientation Checked: <span style="color: #38bdf8;">${stage1.ocrResult.rotationUsed || 0}°</span>
+        </div>
+        <strong>OCR Raw Text (first 300 chars):</strong>
         <div class="debug-raw-ocr">${rawOcrSnippet.replace(/</g, "&lt;").replace(/>/g, "&gt;")}</div>
     </div>`;
 
@@ -1503,8 +1661,12 @@ function renderDebugPanel(stage1) {
     html += `</div>`;
 
     // Vision AI Row
+    const visionDisplayStatus = stage1.visionResult.available ?
+        `Identified: ${stage1.visionResult.topLabel} (Confidence ${(stage1.visionResult.confidence * 100).toFixed(1)}%) - Reason: ${stage1.visionResult.reason}` :
+        (visionApiStatus === "optional_not_configured" ? "Optional - Not Configured (Add GEMINI_API_KEY to server/.env)" : `Status: ${stage1.visionResult.reason || 'Offline'}`);
+
     html += `<div style="margin-top: 0.5rem;"><strong>Vision AI LLM (/api/verify-doc-type):</strong>
-        <div>${stage1.visionResult.available ? `Identified: ${stage1.visionResult.topLabel} (Confidence ${(stage1.visionResult.confidence * 100).toFixed(1)}%) - Reason: ${stage1.visionResult.reason}` : `Status: ${stage1.visionResult.reason}`}</div>
+        <div>${visionDisplayStatus}</div>
     </div>`;
 
     debugPanelBody.innerHTML = html;

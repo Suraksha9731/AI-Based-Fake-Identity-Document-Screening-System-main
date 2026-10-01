@@ -114,6 +114,42 @@
                     <i class="fa-solid fa-user-check"></i> Create Account
                 </button>
             </form>
+
+            <!-- Backend Server / Colab Connection Bridge -->
+            <div class="backend-bridge-box">
+                <div class="bridge-header" onclick="toggleBackendSettings()">
+                    <div class="bridge-status">
+                        <span class="status-dot checking" id="server-status-dot"></span>
+                        <span id="server-status-text">Checking Backend...</span>
+                    </div>
+                    <button type="button" class="bridge-toggle-btn" id="bridge-toggle-btn" title="Configure Colab / Server URL">
+                        <i class="fa-solid fa-cloud"></i> Colab Bridge <i class="fa-solid fa-chevron-down" id="bridge-chevron"></i>
+                    </button>
+                </div>
+                <div class="bridge-settings" id="bridge-settings" style="display: none;">
+                    <label for="server-url-input">
+                        <i class="fa-solid fa-link"></i> Backend API Endpoint (Colab or Local):
+                    </label>
+                    <div class="input-wrapper" style="margin-bottom: 0.6rem;">
+                        <i class="fa-solid fa-server input-icon"></i>
+                        <input type="url" id="server-url-input" placeholder="https://xxxx.trycloudflare.com or http://localhost:5001">
+                    </div>
+                    <div class="bridge-actions">
+                        <button type="button" class="btn btn-xs btn-outline" onclick="setServerPreset('colab')">
+                            <i class="fa-brands fa-google"></i> Colab Preset
+                        </button>
+                        <button type="button" class="btn btn-xs btn-outline" onclick="setServerPreset('local')">
+                            <i class="fa-solid fa-laptop"></i> Local (5001)
+                        </button>
+                        <button type="button" class="btn btn-xs btn-primary" onclick="testAndSaveServerUrl()">
+                            <i class="fa-solid fa-plug-circle-check"></i> Test & Connect
+                        </button>
+                    </div>
+                    <p class="bridge-tip">
+                        <i class="fa-solid fa-circle-info"></i> Running <code>document_forgery_detection.ipynb</code> in Google Colab? Copy the public URL from Step 6 and paste it here!
+                    </p>
+                </div>
+            </div>
         </div>
     </div>
 
